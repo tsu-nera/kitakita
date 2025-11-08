@@ -1,0 +1,33 @@
+-- BPM設定（約140 BPM）
+setcps (140/60/4)
+
+[-- 基本バージョン
+]-- 1. キック: 4つ打ち（強いアタック、太い音）
+d1 $ sound "bd*4"
+  # gain 1.3
+  # shape 0.2  -- アタックを強調
+
+
+-- 3. クローズドハイハット: XX-X/XX-X パターン
+d3 $ sound "hh hh hh hh hh hh hh hh"
+  # gain 1.1
+  
+-- 4. オープンハイハット: --X-/--X- パターン
+d4 $ sound "~ ~ ho ~"
+  # gain 0.8
+  # cutoff 8000
+
+---
+
+-- a bass drum
+d1 $ s "[bd~]*4"
+  # gain 1.3
+  # shape 0.2  -- アタックを強調
+
+-- high-hat pattern
+d2 $ s "[~hh]*4"
+
+-- 2. スネア/クラップ: 2拍目と4拍目
+d3 $ sound "[~cp]*2"
+
+

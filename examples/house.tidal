@@ -1,0 +1,17 @@
+// house.tidal
+// A simple house pattern in TidalCycles
+// https://moistpeace.com/category/tidalcycles/page/4/
+
+setcps(128/60/4)
+
+d1 $ s "[~ hc] [~ [hc hc]] [~ hc] [~ hc] " 
+    # gain " 0.8 [1 0.8] 0.9 0.7"
+     # speed "1.2"
+
+d2 $ s " house house house <house house house house*2>"
+
+d3 $ s " ~ [~ ~ ~ house:5] ~ house:4" 
+    # speed "~ <1 1 1 0.9> ~ 1" 
+    # room "~ 1 ~ <0 0 0 0.3>"
+
+hush
