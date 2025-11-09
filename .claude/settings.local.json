@@ -4,7 +4,8 @@
       "Bash(del tidal-project.cabal)",
       "Bash(stack build:*)",
       "Bash(hpack:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
