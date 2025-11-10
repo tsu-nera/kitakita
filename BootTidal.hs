@@ -6,6 +6,7 @@ tidal <- startTidal (superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oP
 
 let p = streamReplace tidal
 let hush = streamHush tidal
+let setcps v = streamOnce tidal $ cps v
 let d1 = p 1
 let d2 = p 2
 let d3 = p 3
