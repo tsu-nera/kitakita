@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strudel File Watcher</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    #status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      background: #333;
+    }
+    .ready { color: #4CAF50; }
+    .error { color: #f44336; }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    #stop {
+      background: #f44336;
+    }
+    #stop:hover {
+      background: #da190b;
+    }
+    #code {
+      background: #2d2d2d;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 10px 0;
+      white-space: pre-wrap;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>Strudel File Watcher</h1>
+  <div id="status">Initializing...</div>
+
+  <div>
+    <input type="text" id="filepath" placeholder="src/strudel/hello.str" style="width: 300px; padding: 10px; margin: 5px; font-family: monospace;">
+    <button id="load">Load File</button>
+    <button id="reload">Reload</button>
+    <button id="stop">Stop</button>
+  </div>
+
+  <h3>Current Code:</h3>
+  <div id="code">Loading...</div>
+
+  <script type="module">
+    import { initStrudel, evaluate, hush } from '@strudel/web';
+
+    const statusEl = document.getElementById('status');
+    const codeEl = document.getElementById('code');
+    const filepathEl = document.getElementById('filepath');
+
+    // Get file from URL parameter or use default
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentFile = urlParams.get('file') || 'src/strudel/hello.str';
+    filepathEl.value = currentFile;
+
+    // Initialize Strudel
+    statusEl.textContent = 'Loading samples...';
+    await initStrudel({
+      prebake: () => samples('github:tidalcycles/Dirt-Samples'),
+    });
+
+    statusEl.className = 'ready';
+    statusEl.textContent = `✓ Ready! Edit ${currentFile} and save to hear changes.`;
+
+    // Load and run the .str file
+    async function loadAndRun() {
+      try {
+        // Fetch the .str file with cache busting
+        const filePath = currentFile.startsWith('/') ? currentFile : '/' + currentFile;
+        const response = await fetch(filePath + '?t=' + Date.now());
+        const code = await response.text();
+
+        codeEl.textContent = code;
+
+        // Debug: check code
+        console.log('Code to evaluate:', JSON.stringify(code));
+        console.log('Code length:', code.length);
+
+        // Skip empty code
+        if (!code || code.trim().length === 0) {
+          console.warn('Empty code, skipping evaluation');
+          return;
+        }
+
+        // Evaluate the code
+        await evaluate(code);
+
+        console.log(`[${new Date().toLocaleTimeString()}] Pattern updated`);
+      } catch (error) {
+        statusEl.className = 'error';
+        statusEl.textContent = '✗ Error: ' + error.message;
+        console.error(error);
+      }
+    }
+
+    // Initial load
+    await loadAndRun();
+
+    // Auto-reload every 2 seconds (when file changes)
+    let lastCode = '';
+    setInterval(async () => {
+      try {
+        const filePath = currentFile.startsWith('/') ? currentFile : '/' + currentFile;
+        const response = await fetch(filePath + '?t=' + Date.now());
+        const code = await response.text();
+
+        if (code !== lastCode && code.trim().length > 0) {
+          lastCode = code;
+          codeEl.textContent = code;
+          console.log('Auto-reload: evaluating code');
+          await evaluate(code);
+          statusEl.className = 'ready';
+          statusEl.textContent = `✓ Updated at ${new Date().toLocaleTimeString()}`;
+        }
+      } catch (error) {
+        console.error('Poll error:', error);
+      }
+    }, 2000);
+
+    // Button handlers
+    document.getElementById('load').addEventListener('click', () => {
+      currentFile = filepathEl.value;
+      statusEl.textContent = `Loading ${currentFile}...`;
+      loadAndRun();
+    });
+    document.getElementById('reload').addEventListener('click', loadAndRun);
+    document.getElementById('stop').addEventListener('click', () => hush());
+  </script>
+</body>
+</html>

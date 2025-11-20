@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strudel - kitakita</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 40px;
+      background: #1a1a1a;
+      color: #fff;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #4CAF50;
+    }
+    a {
+      display: block;
+      padding: 15px 20px;
+      margin: 10px 0;
+      background: #333;
+      color: #4CAF50;
+      text-decoration: none;
+      border-radius: 4px;
+      transition: background 0.3s;
+    }
+    a:hover {
+      background: #444;
+    }
+    .description {
+      color: #999;
+      margin-top: 5px;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Strudel - kitakita</h1>
+
+  <p>Live coding environment for Strudel patterns</p>
+
+  <h2>Choose your mode:</h2>
+
+  <a href="/ui/watch.html">
+    <strong>🌐 Browser Mode (Web Audio)</strong>
+    <div class="description">Easy setup, no dependencies. Edit .str files and hear changes in your browser.</div>
+  </a>
+
+  <a href="#osc-mode" style="background: #2d2d2d; cursor: default;">
+    <strong>🎹 OSC Mode (SuperDirt)</strong>
+    <div class="description">TidalCycles workflow. Edit in any editor, send to SuperDirt via OSC.</div>
+  </a>
+
+  <hr style="margin: 30px 0; border-color: #333;">
+
+  <h3>Browser Mode:</h3>
+  <pre style="background: #2d2d2d; padding: 15px; border-radius: 4px;">
+# Start UI server
+npm run ui
+
+# Open in browser
+http://localhost:5173/ui/watch.html
+
+# Or specify a file
+http://localhost:5173/ui/watch.html?file=src/strudel/hello.str
+  </pre>
+
+  <h3>OSC Mode (TidalCycles style):</h3>
+  <pre style="background: #2d2d2d; padding: 15px; border-radius: 4px;">
+# 1. Start SuperCollider and run:
+SuperDirt.start
+
+# 2. Run OSC watcher (in another terminal)
+npm run osc src/strudel/hello.str
+
+# 3. Edit src/strudel/hello.str in your editor
+# Changes are automatically sent to SuperDirt!
+  </pre>
+</body>
+</html>
