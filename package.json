@@ -1,0 +1,43 @@
+{
+  "name": "kitakita",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "doc",
+    "example": "examples",
+    "test": "test"
+  },
+  "type": "module",
+  "scripts": {
+    "ui": "vite",
+    "osc": "node osc-runner.js",
+    "osc-server": "node node_modules/@strudel/osc/server.js",
+    "build": "vite build",
+    "build:vscode": "vite build --config vite.config.vscode.js",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tsu-nera/kitakita.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tsu-nera/kitakita/issues"
+  },
+  "homepage": "https://github.com/tsu-nera/kitakita#readme",
+  "dependencies": {
+    "@strudel/core": "^1.2.5",
+    "@strudel/mini": "^1.2.5",
+    "@strudel/osc": "^1.3.0",
+    "@strudel/web": "^1.2.6",
+    "@strudel/webaudio": "^1.2.6",
+    "chokidar": "^4.0.3"
+  },
+  "devDependencies": {
+    "vite": "^7.2.2"
+  }
+}

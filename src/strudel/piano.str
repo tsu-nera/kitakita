@@ -1,0 +1,2 @@
+// プリロード済みのpianoサンプルを試す
+note("c a f e").s("piano")
