@@ -9,4 +9,7 @@ d1 $
 ]
 # shape "0.2"
 
+-- Kick (36), Snare (38), ClosedHat (42)
+d1 $ n "36 36 ~ 36 38 42*4" # s "midi"
+
 hush
