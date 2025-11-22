@@ -1,7 +1,7 @@
 // https://www.youtube.com/watch?v=GWXCCBsOMSg
 setCpm(140/4)
 
-// 外部スクリプトを読み込む
+// read external scripts
 await fetch('https://raw.githubusercontent.com/switchangel/strudel-scripts/main/allscripts.js')
     .then(r => r.text())
     .then(eval)

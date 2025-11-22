@@ -76,8 +76,16 @@
 
     // Initialize Strudel
     statusEl.textContent = 'Loading samples...';
+    const ds = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/';
     await initStrudel({
-      prebake: () => samples('github:tidalcycles/Dirt-Samples'),
+      prebake: () => Promise.all([
+        samples(`${ds}tidal-drum-machines.json`, `${ds}tidal-drum-machines/machines/`),
+        samples(`${ds}piano.json`, `${ds}piano/`),
+        samples(`${ds}Dirt-Samples.json`, `${ds}Dirt-Samples/`),
+        samples(`${ds}EmuSP12.json`, `${ds}tidal-drum-machines/machines/`),
+        samples(`${ds}vcsl.json`, `${ds}VCSL/`),
+        samples(`${ds}mridangam.json`, `${ds}mrid/`)
+      ])
     });
 
     statusEl.className = 'ready';

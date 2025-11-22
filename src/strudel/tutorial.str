@@ -1,0 +1,9 @@
+// s("casio:2")
+
+// sound("bd hh sd oh")
+
+// sound("bd hh sd oh").bank("RolandTR909")
+
+// sound("bd bd hh bd rim bd hh bd")
+
+// sound("<bd bd hh bd rim bd hh bd>*8")
