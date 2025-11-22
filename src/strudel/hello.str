@@ -1,3 +1,0 @@
-s("bd!8").gain(.8)
-
-note("48 52 55 59").sound("piano")
