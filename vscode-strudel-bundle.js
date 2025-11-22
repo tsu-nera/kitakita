@@ -27,9 +27,28 @@ async function initAudio() {
   try {
     sendMessage('log', 'Initializing Strudel (latest version)...');
 
-    // Initialize Strudel with default samples
+    // Initialize Strudel with dough-samples (online)
+    const ds = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/';
+    sendMessage('log', `Loading samples from: ${ds}`);
+
     await initStrudel({
-      prebake: () => samples('github:tidalcycles/Dirt-Samples'),
+      prebake: async () => {
+        try {
+          const result = await Promise.all([
+            samples(`${ds}tidal-drum-machines.json`), // Use _base from JSON
+            samples(`${ds}piano.json`), // Use _base from JSON
+            samples(`${ds}Dirt-Samples.json`), // Use _base from JSON
+            samples(`${ds}EmuSP12.json`), // Use _base from JSON
+            samples(`${ds}vcsl.json`), // Use _base from JSON
+            samples(`${ds}mridangam.json`) // Use _base from JSON
+          ]);
+          sendMessage('log', '✓ All samples loaded successfully');
+          return result;
+        } catch (error) {
+          sendMessage('error', `Failed to load samples: ${error.message}`);
+          throw error;
+        }
+      }
     });
 
     // Check if audio context is running
@@ -74,6 +93,10 @@ async function playPattern() {
 
   try {
     sendMessage('log', 'Evaluating pattern...');
+
+    // Check audio context state
+    const ctx = getAudioContext();
+    sendMessage('log', `Audio context state: ${ctx?.state}, sample rate: ${ctx?.sampleRate}`);
 
     // Evaluate the pattern using @strudel/web
     await evaluate(currentPattern);
