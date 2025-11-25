@@ -1,180 +1,56 @@
-# Claude作業ログ
+# Claude Code 設定
 
-このファイルには、Claudeとの作業で行った設定や変更内容を記録します。
+このプロジェクトはStrudel（ライブコーディング音楽環境）を使った音楽制作環境です。
 
-## VSCode拡張機能でStrudelサンプルをオンライン読み込み
+## Strudelドキュメント検索
 
-**日付**: 2025-11-21
-**目的**: VSCode拡張機能（roipoussiere.tidal-strudel）でdough-samplesをオンラインから読み込む
+Strudelの関数・文法について質問されたら、**Web検索ではなくローカルドキュメントを検索**してください。
 
-### 背景
+### 検索場所
 
-- VSCodeでStrudel拡張機能を使用している
-- デフォルトでは限定的なサンプルのみ利用可能
-- dough-samplesをローカルサーバーで動かすのはサイズが大きいため断念
-- GitHubから直接オンラインで読み込むように変更
-
-### 実施した変更
-
-#### 1. vscode-strudel-bundle.js の修正
-
-**ファイル**: `vscode-strudel-bundle.js` (28-41行目)
-
-**変更前**:
-```javascript
-await initStrudel({
-  prebake: () => samples('github:tidalcycles/Dirt-Samples'),
-});
+```
+tmp/strudel/website/src/pages/
 ```
 
-**変更後**:
-```javascript
-// Initialize Strudel with dough-samples (online)
-const ds = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/';
-await initStrudel({
-  prebake: () => Promise.all([
-    samples(`${ds}tidal-drum-machines.json`, `${ds}tidal-drum-machines/machines/`),
-    samples(`${ds}piano.json`, `${ds}piano/`),
-    samples(`${ds}Dirt-Samples.json`, `${ds}Dirt-Samples/`),
-    samples(`${ds}EmuSP12.json`, `${ds}tidal-drum-machines/machines/`),
-    samples(`${ds}vcsl.json`, `${ds}VCSL/`),
-    samples(`${ds}mridangam.json`, `${ds}mrid/`)
-  ])
-});
-```
-
-#### 2. piano.str の修正
-
-**ファイル**: `src/strudel/piano.str`
-
-**変更前**:
-```javascript
-async function loadSamples() {
-  const ds = "https://raw.githubusercontent.com/felixroos/dough-samples/main/";
-  return Promise.all([
-    samples(`${ds}/tidal-drum-machines.json`),
-    samples(`${ds}/piano.json`),
-    samples(`${ds}/Dirt-Samples.json`),
-    samples(`${ds}/EmuSP12.json`),
-    samples(`${ds}/vcsl.json`),
-    samples(`${ds}/mridangam.json`),
-  ]);
-}
-
-note("c a f e").s("piano")
-```
-
-**変更後**:
-```javascript
-// pianoサンプルはui/watch.htmlで読み込み済み
-note("c a f e").s("piano")
-```
-
-**理由**: サンプルの読み込みはvscode-strudel-bundle.jsで一括管理するため、.strファイル内での読み込みは不要。
-
-### デプロイ手順
-
-#### 1. ビルド
+### 検索コマンド例
 
 ```bash
-npm run build:vscode
+# 関数名で検索（例: fit）
+grep -r "\.fit\(" tmp/strudel/website/src/pages/
+
+# トピックで検索（例: duck）
+grep -r "duck" tmp/strudel/website/src/pages/learn/
 ```
 
-これで `dist-vscode/strudel.js` が生成されます。
+### 主要ファイル
 
-#### 2. VSCode拡張機能へコピー
+| トピック | ファイル |
+|---------|---------|
+| サンプル操作 (fit, loopAt, chop) | `learn/samples.mdx` |
+| エフェクト | `learn/effects.mdx` |
+| シンセ | `learn/synths.mdx` |
+| ミニノーテーション | `learn/mini-notation.mdx` |
+| スケール・音階 | `learn/tonal.mdx` |
+| 時間操作 | `learn/time-modifiers.mdx` |
+| レシピ・実践例 | `recipes/recipes.mdx` |
 
-```bash
-# バックアップ（任意）
-cp ~/.vscode/extensions/roipoussiere.tidal-strudel-0.2.1/dist/strudel.js \
-   ~/.vscode/extensions/roipoussiere.tidal-strudel-0.2.1/dist/strudel.js.old
+## プロジェクト構成
 
-# 新しいビルドをコピー
-cp dist-vscode/strudel.js \
-   ~/.vscode/extensions/roipoussiere.tidal-strudel-0.2.1/dist/strudel.js
-```
+- `src/strudel/` - Strudelパターンファイル (.str)
+- `tmp/strudel/` - Strudelリポジトリ（ドキュメント参照用）
+- `doc/` - プロジェクトドキュメント
 
-**Windowsの場合**:
-```bash
-cp dist-vscode/strudel.js \
-   /c/Users/fox10/.vscode/extensions/roipoussiere.tidal-strudel-0.2.1/dist/strudel.js
-```
+## VSCode拡張機能
 
-#### 3. VSCodeをリロード
+このプロジェクトは `roipoussiere.tidal-strudel` 拡張機能を使用。
+カスタムビルドの詳細は [doc/VSCODE_STRUDEL.md](doc/VSCODE_STRUDEL.md) を参照。
 
-`Ctrl+Shift+P` → "Developer: Reload Window"
+## 利用可能なサンプル
 
-### 利用可能なサンプル
-
-変更後、以下のサンプルが利用可能：
-
-- **tidal-drum-machines**: bd, sd, hh, oh, cp など
-- **piano**: piano:0, piano:1, piano:2 など
-- **Dirt-Samples**: 全てのTidalCyclesサンプル
-- **EmuSP12**: エミュレーターサンプル
-- **VCSL**: 楽器サンプル
-- **mridangam**: ムリダンガムサンプル
-
-### 使用例
-
-```javascript
-// ピアノ
-note("c a f e").s("piano")
-
-// ドラム
-s("bd sd hh oh")
-
-// 複雑なパターン
-stack(
-  s("bd!4"),
-  s("sd!8").gain(0.8),
-  note("c e g").s("piano")
-)
-```
-
-### トラブルシューティング
-
-#### サンプルが読み込まれない場合
-
-1. ビルドが最新か確認:
-   ```bash
-   ls -lh dist-vscode/strudel.js
-   ```
-
-2. 拡張機能のファイルが更新されているか確認:
-   ```bash
-   md5sum dist-vscode/strudel.js \
-          ~/.vscode/extensions/roipoussiere.tidal-strudel-*/dist/strudel.js
-   ```
-
-   両方のハッシュ値が一致していること。
-
-3. VSCodeをリロードしたか確認
-
-4. ブラウザのコンソールでエラーを確認:
-   - `Ctrl+Shift+P` → "Developer: Toggle Developer Tools"
-   - Console タブでエラーメッセージを確認
-
-#### オフラインで使いたい場合
-
-dough-samplesをローカルで動かす方法は `doc/STRUDEL_SAMPLES.md` を参照。
-
-### 注意事項
-
-- **ui/watch.html**: ブラウザモードを使う場合のみ修正が必要。VSCodeのみ使用する場合は修正不要。
-- **バージョンアップ時**: VSCode拡張機能がアップデートされた場合、再度コピーが必要。
-- **オンライン接続**: サンプルをGitHubから読み込むため、初回はインターネット接続が必要。その後はブラウザキャッシュで動作。
-
-### 関連ドキュメント
-
-- [STRUDEL_SAMPLES.md](doc/STRUDEL_SAMPLES.md) - サンプル仕様書
-- [dough-samples リポジトリ](https://github.com/felixroos/dough-samples)
-- [VSCode拡張機能](https://marketplace.visualstudio.com/items?itemName=roipoussiere.tidal-strudel)
-
----
-
-## 今後の作業メモ
-
-- [ ] 他のサンプルバンク（Freesound等）の追加を検討
-- [ ] カスタムサンプルの管理方法を整理（@strudel/sampler使用）
-- [ ] サンプルのプリロード最適化
+dough-samplesをオンライン読み込み設定済み：
+- tidal-drum-machines (bd, sd, hh, oh, cp)
+- piano
+- Dirt-Samples
+- EmuSP12
+- VCSL
+- mridangam

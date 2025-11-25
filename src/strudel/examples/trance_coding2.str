@@ -1,0 +1,23 @@
+// https://www.youtube.com/watch?v=iu5rnQkfO6M&t=2s
+
+setCpm(140/4)
+
+stack(
+
+n("<0 4 0 9 7>*16").scale("g:minor").trans(-12)
+    .s("sawtooth").orbit(3),
+
+n("<0>*16").scale("g:minor").trans(-24)
+    .detune(rand)
+    .s("supersaw").orbit(4),
+
+// op: top loop
+// 1/2: サンプルを2分割して1番目を使う、という意味
+// fit: サンプルをイベントの長さに合わせて再生速度を調整
+// s("top:1/2").fit().orbit(5),
+
+s("bd:2!4").bank("RolandTR909")
+    .duck("3:4:5:6")
+    .duckdepth(.8)
+    .duckattack(.16)
+)
