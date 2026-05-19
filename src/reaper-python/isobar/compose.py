@@ -7,6 +7,7 @@ Why this design:
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -14,11 +15,11 @@ from typing import Iterable
 import isobar as iso
 from mido import Message, MetaMessage, MidiFile, MidiTrack, bpm2tempo
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from spec import Arrangement, TrackSpec, load_spec  # noqa: E402
+
 TICKS_PER_BEAT = 480
 OUT_DIR = Path(__file__).resolve().parents[1] / "output"
-
-# Sampler trigger note (ReaSamplomatic5000 default)
-SAMPLER_NOTE = 60
 
 
 @dataclass
@@ -85,55 +86,44 @@ def events_to_midi(events: list[Event], bpm: float, path: Path) -> None:
     mid.save(path)
 
 
-# ---------- Patterns ----------
+# ---------- Patterns (driven by arrangement.toml) ----------
 
-BPM = 138
-BARS = 4
+def _rhythm_pattern(track: TrackSpec):
+    """Build an isobar rhythm generator from a TrackSpec.rhythm."""
+    r = track.rhythm
+    if r.type == "euclidean":
+        return iso.PEuclidean(r.hits, r.steps)
+    raise ValueError(f"unsupported rhythm type: {r.type!r}")
 
-A_PHRYGIAN = iso.Scale([0, 1, 3, 5, 7, 8, 10], name="phrygian")  # A as root
+
+def _velocity_pattern(track: TrackSpec):
+    v = track.velocity
+    return v if isinstance(v, int) else iso.PSequence(list(v))
 
 
-def compose_all() -> dict[str, Path]:
-    """Write kick/hat/bass MIDI files. Returns mapping of track name -> path."""
-
-    # Kick: classic 4-on-the-floor (Euclidean 4,16 = 4 hits in 16 steps)
-    kick_events = pattern_to_events(
-        rhythm=iso.PEuclidean(4, 16),
-        pitch=SAMPLER_NOTE,
-        velocity=120,
-        step_beats=0.25,
-        bars=BARS,
+def compose_track(track: TrackSpec, spec: Arrangement) -> list[Event]:
+    return pattern_to_events(
+        rhythm=_rhythm_pattern(track),
+        pitch=spec.sampler_note,
+        velocity=_velocity_pattern(track),
+        step_beats=track.step,
+        bars=spec.bars,
     )
 
-    # Hat: Euclidean 11/16 for syncopation
-    hat_events = pattern_to_events(
-        rhythm=iso.PEuclidean(11, 16),
-        pitch=SAMPLER_NOTE,
-        velocity=iso.PSequence([85, 70, 70, 70, 90, 70, 70, 70]),
-        step_beats=0.25,
-        bars=BARS,
-    )
 
-    # Bass: off-beats (Euclidean 3,8), all on SAMPLER_NOTE
-    # (Sampler is mono-pitched anyway; melodic content lives in lead/synth)
-    bass_events = pattern_to_events(
-        rhythm=iso.PEuclidean(3, 8),
-        pitch=SAMPLER_NOTE,
-        velocity=100,
-        step_beats=0.5,
-        bars=BARS,
-    )
+def compose_all(spec: Arrangement | None = None) -> dict[str, Path]:
+    """Write one MIDI file per track from the arrangement spec.
 
-    paths = {
-        "kick": OUT_DIR / "kick.mid",
-        "hat": OUT_DIR / "hat.mid",
-        "bass": OUT_DIR / "bass.mid",
-    }
-    events_to_midi(kick_events, BPM, paths["kick"])
-    events_to_midi(hat_events, BPM, paths["hat"])
-    events_to_midi(bass_events, BPM, paths["bass"])
-    for name, p in paths.items():
-        print(f"+ {name}: {p.name}")
+    Returns a mapping of track name -> output path.
+    """
+    spec = spec or load_spec()
+    paths: dict[str, Path] = {}
+    for track in spec.tracks:
+        events = compose_track(track, spec)
+        path = OUT_DIR / f"{track.name}.mid"
+        events_to_midi(events, spec.bpm, path)
+        paths[track.name] = path
+        print(f"+ {track.name}: {path.name} ({len(events)} notes)")
     return paths
 
 

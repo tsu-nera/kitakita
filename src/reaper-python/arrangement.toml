@@ -1,0 +1,55 @@
+# =============================================================================
+# arrangement.toml — このアレンジの「正本(source of truth)」
+#
+# ここを編集すれば compose / setup / load / status すべてに反映される。
+# Reaper は描画先（片方向）。手で Reaper を編集しても正本はここ。
+# 「今ならんでいる内容」を知りたいときはこのファイルを読む（Reaper 不要）。
+#
+# 反映フロー:
+#   uv run python isobar/compose.py   # spec -> output/*.mid 生成
+#   uv run python reaper/setup.py     # spec -> トラック/サンプラを冪等反映
+#   uv run python reaper/load.py      # output/*.mid を各トラックへ流し込み
+#   uv run python reaper/status.py    # 走行中 Reaper と spec の差分表示
+# =============================================================================
+
+bpm  = 138
+bars = 4
+
+# ReaSamplomatic5000 のトリガノート（C4=60）。全ドラムトラック共通。
+sampler_note = 60
+
+# サンプルの基準ディレクトリ。各トラックの sample はここからの相対パス。
+sample_root = 'C:\Users\fox10\Music\Samples\Black Octopus\Trance Vision'
+
+# スケール（現状はサンプラ1音固定で未使用。lead/synth 追加時に使う想定で保持）
+[scale]
+root = "A"
+name = "phrygian"   # intervals: 0,1,3,5,7,8,10
+
+# -----------------------------------------------------------------------------
+# tracks: 上から順に Reaper トラックとして並ぶ
+#   rhythm.type = "euclidean": hits 個のヒットを steps 個のステップへ均等配置
+#   step       : 1ステップの拍数 (0.25=16分, 0.5=8分)
+#   velocity   : 数値=固定 / 配列=循環シーケンス
+# -----------------------------------------------------------------------------
+
+[[tracks]]
+name     = "kick"
+sample   = 'Drum - Kick - One Shots\DPT_Kick_One_Shot_Acidtech.wav'
+step     = 0.25
+velocity = 120
+rhythm   = { type = "euclidean", hits = 4, steps = 16 }   # 4つ打ち
+
+[[tracks]]
+name     = "hat"
+sample   = 'Drum - Hat Closed - One Shot\DPT_Hat_Closed_One_Shot_Accent.wav'
+step     = 0.25
+velocity = [85, 70, 70, 70, 90, 70, 70, 70]
+rhythm   = { type = "euclidean", hits = 11, steps = 16 }  # シンコペ
+
+[[tracks]]
+name     = "bass"
+sample   = 'Bass - One Shot\DPT_A_Bass_One_Shot_Lowsub.wav'
+step     = 0.5
+velocity = 100
+rhythm   = { type = "euclidean", hits = 3, steps = 8 }    # オフビート
