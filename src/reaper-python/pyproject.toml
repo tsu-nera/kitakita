@@ -1,7 +1,7 @@
 [project]
 name = "reaper-python"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"  # reapy-next が依存する lib2to3 は 3.13 で削除された
 dependencies = [
     "isobar>=0.2.1",
     "mido>=1.3.3",
