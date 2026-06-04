@@ -58,7 +58,10 @@ def load_spec(path: str | Path | None = None) -> Arrangement:
     with open(path, "rb") as f:
         raw = tomllib.load(f)
 
+    # 相対 sample_root は arrangement.toml の場所基準に解決（CWD 非依存）
     sample_root = Path(raw["sample_root"])
+    if not sample_root.is_absolute():
+        sample_root = path.parent / sample_root
     scale = raw.get("scale", {})
 
     tracks: list[TrackSpec] = []

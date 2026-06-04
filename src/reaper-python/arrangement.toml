@@ -19,7 +19,13 @@ bars = 4
 sampler_note = 60
 
 # サンプルの基準ディレクトリ。各トラックの sample はここからの相対パス。
-sample_root = 'C:\Users\fox10\Music\Samples\Black Octopus\Trance Vision'
+# sample_root: 各トラックの sample はここからの相対パス。相対指定なら
+# arrangement.toml の場所基準で解決される（spec.py）。
+#
+# Windows 本サンプル（Black Octopus / Trance Vision）が無い Linux 環境では、
+# samples/gen_kick.py 等で合成した代替音源を指す samples/ を使う。
+#   Windows 復帰時の元パス: 'C:\Users\fox10\Music\Samples\Black Octopus\Trance Vision'
+sample_root = 'samples'
 
 # スケール（現状はサンプラ1音固定で未使用。lead/synth 追加時に使う想定で保持）
 [scale]
@@ -35,21 +41,15 @@ name = "phrygian"   # intervals: 0,1,3,5,7,8,10
 
 [[tracks]]
 name     = "kick"
-sample   = 'Drum - Kick - One Shots\DPT_Kick_One_Shot_Acidtech.wav'
+sample   = 'kick.wav'                                     # 合成キック (samples/gen_kick.py)
 step     = 0.25
 velocity = 120
 rhythm   = { type = "euclidean", hits = 4, steps = 16 }   # 4つ打ち
 
-[[tracks]]
-name     = "hat"
-sample   = 'Drum - Hat Closed - One Shot\DPT_Hat_Closed_One_Shot_Accent.wav'
-step     = 0.25
-velocity = [85, 70, 70, 70, 90, 70, 70, 70]
-rhythm   = { type = "euclidean", hits = 11, steps = 16 }  # シンコペ
-
-[[tracks]]
-name     = "bass"
-sample   = 'Bass - One Shot\DPT_A_Bass_One_Shot_Lowsub.wav'
-step     = 0.5
-velocity = 100
-rhythm   = { type = "euclidean", hits = 3, steps = 8 }    # オフビート
+# --- hat / bass は Linux 用の合成音源が未生成のため一時無効化 ---
+# setup.py は全トラックのサンプル実在を要求するため、音源を用意したら復活させる。
+# 元の Windows サンプル:
+#   hat : 'Drum - Hat Closed - One Shot\DPT_Hat_Closed_One_Shot_Accent.wav'
+#         step=0.25, velocity=[85,70,70,70,90,70,70,70], euclidean hits=11 steps=16
+#   bass: 'Bass - One Shot\DPT_A_Bass_One_Shot_Lowsub.wav'
+#         step=0.5,  velocity=100, euclidean hits=3 steps=8

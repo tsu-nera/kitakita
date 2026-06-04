@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .python-version
 output/
+# gen_kick.py 等で再生成可能な合成音源は追跡しない
+samples/*.wav

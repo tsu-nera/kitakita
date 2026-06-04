@@ -84,6 +84,7 @@ sudo pacman -S pipewire-jack   # jack2 の削除を促されたら yes
 ## ワークフロー
 
 ```bash
+uv run python samples/gen_kick.py  # 合成サンプル生成 (samples/*.wav は git 管理外)
 uv run python isobar/compose.py    # MIDI 生成
 uv run python reaper/setup.py      # arrangement.toml に従いトラック調整 (冪等)
 uv run python reaper/load.py       # REAPER に読込
@@ -92,6 +93,11 @@ uv run python reaper/transport.py play
 ```
 
 アレンジの正本は `arrangement.toml`。
+
+> **サンプルについて**: 本来は Windows 上の Black Octopus サンプルを使うが、
+> Linux 環境ではそれが無いため `samples/gen_kick.py` で合成キックを生成して代用する。
+> `samples/*.wav` は再生成可能なため git 管理外。`setup.py` は全トラックのサンプル
+> 実在を要求するので、ワークフロー実行前に必ず生成しておくこと。
 
 ## ディレクトリ
 
