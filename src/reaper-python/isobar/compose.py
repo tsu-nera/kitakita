@@ -93,6 +93,10 @@ def _rhythm_pattern(track: TrackSpec):
     r = track.rhythm
     if r.type == "euclidean":
         return iso.PEuclidean(r.hits, r.steps)
+    if r.type == "steps":
+        # "x...x..." → [1,0,0,0,1,0,0,0]。非'.'をヒットとみなし、PSequence でループ
+        seq = [0 if c == "." else 1 for c in r.pattern if not c.isspace()]
+        return iso.PSequence(seq)
     raise ValueError(f"unsupported rhythm type: {r.type!r}")
 
 

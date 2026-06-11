@@ -23,9 +23,10 @@ DEFAULT_SPEC = ROOT / "arrangement.toml"
 
 @dataclass(frozen=True)
 class Rhythm:
-    type: str
-    hits: int
-    steps: int
+    type: str                 # "steps" | "euclidean"
+    hits: int = 0             # euclidean: ヒット数
+    steps: int = 0            # euclidean: 総ステップ数
+    pattern: str | None = None  # steps: "x...x..." (非'.'=ヒット) 1小節ぶん、以降ループ
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,11 @@ class TrackSpec:
     step: float           # beats per step (0.25 = 16th)
     velocity: int | list[int]
     rhythm: Rhythm
+    volume_db: float = 0.0   # トラック音量 (dB, 0=ユニティ)。setup.py が D_VOL に反映
+
+    @property
+    def volume_linear(self) -> float:
+        return 10 ** (self.volume_db / 20)
 
 
 @dataclass(frozen=True)
@@ -67,14 +73,19 @@ def load_spec(path: str | Path | None = None) -> Arrangement:
     tracks: list[TrackSpec] = []
     for t in raw["tracks"]:
         r = t["rhythm"]
-        if r["type"] != "euclidean":
+        if r["type"] == "euclidean":
+            rhythm = Rhythm(type="euclidean", hits=int(r["hits"]), steps=int(r["steps"]))
+        elif r["type"] == "steps":
+            rhythm = Rhythm(type="steps", pattern=str(r["pattern"]))
+        else:
             raise ValueError(f"unsupported rhythm type: {r['type']!r}")
         tracks.append(TrackSpec(
             name=t["name"],
             sample=(sample_root / t["sample"]).resolve(),
             step=float(t["step"]),
             velocity=t["velocity"],
-            rhythm=Rhythm(type=r["type"], hits=int(r["hits"]), steps=int(r["steps"])),
+            rhythm=rhythm,
+            volume_db=float(t.get("volume_db", 0.0)),
         ))
 
     return Arrangement(

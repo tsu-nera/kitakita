@@ -66,7 +66,18 @@ def reconcile(spec: Arrangement, dry: bool = False) -> None:
             RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "DONE", "")
             sstate = "sample+"
 
-        print(f"  {spec_t.name:5s} {tstate:7s} {fxstate} {sstate}"
+        want_vol = spec_t.volume_linear
+        cur_vol = RPR.GetMediaTrackInfo_Value(track.id, "D_VOL")
+        if abs(cur_vol - want_vol) < 1e-3:
+            vstate = "vol="
+        elif dry:
+            print(f"[dry] {spec_t.name}: set vol -> {spec_t.volume_db:+.1f}dB")
+            continue
+        else:
+            RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
+            vstate = "vol+"
+
+        print(f"  {spec_t.name:5s} {tstate:7s} {fxstate} {sstate} {vstate}"
               f"  {spec_t.sample.name}")
 
     extra = [n for n in existing_names if n not in spec_names]

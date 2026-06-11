@@ -18,14 +18,11 @@ bars = 4
 # ReaSamplomatic5000 のトリガノート（C4=60）。全ドラムトラック共通。
 sampler_note = 60
 
-# サンプルの基準ディレクトリ。各トラックの sample はここからの相対パス。
-# sample_root: 各トラックの sample はここからの相対パス。相対指定なら
-# arrangement.toml の場所基準で解決される（spec.py）。
-#
-# Windows 本サンプル（Black Octopus / Trance Vision）が無い Linux 環境では、
-# samples/gen_kick.py 等で合成した代替音源を指す samples/ を使う。
-#   Windows 復帰時の元パス: 'C:\Users\fox10\Music\Samples\Black Octopus\Trance Vision'
-sample_root = 'samples'
+# sample_root: 各トラックの sample はここからの相対パス（区切りは Linux の '/'）。
+# 相対指定なら arrangement.toml の場所基準で解決される（spec.py）。
+#   合成音源で代用する場合: 'samples'（samples/gen_kick.py 等で生成）
+#   Windows 復帰時の元パス : 'C:\Users\fox10\Music\Samples\Black Octopus\Trance Vision'
+sample_root = '/mnt/shared/DTM/Samples/Black Octopus/Trance Vision'
 
 # スケール（現状はサンプラ1音固定で未使用。lead/synth 追加時に使う想定で保持）
 [scale]
@@ -34,22 +31,48 @@ name = "phrygian"   # intervals: 0,1,3,5,7,8,10
 
 # -----------------------------------------------------------------------------
 # tracks: 上から順に Reaper トラックとして並ぶ
-#   rhythm.type = "euclidean": hits 個のヒットを steps 個のステップへ均等配置
-#   step       : 1ステップの拍数 (0.25=16分, 0.5=8分)
+#   rhythm.type = "steps": "x...x..." を直接書く (非'.'=ヒット, 1小節ぶん, 以降ループ)
+#   rhythm.type = "euclidean": hits 個のヒットを steps 個へ均等配置
+#   step       : 1ステップの拍数 (0.25=16分)
 #   velocity   : 数値=固定 / 配列=循環シーケンス
+#   volume_db  : トラック音量 (dB, 0=ユニティ)。setup.py が D_VOL に反映
+# -----------------------------------------------------------------------------
+# オーソドックスなトランス・ドラム (16分グリッド):
+#   step:  1 e & a 2 e & a 3 e & a 4 e & a
+#   kick   x . . . x . . . x . . . x . . .   4つ打ち
+#   clap   . . . . x . . . . . . . x . . .   2拍4拍
+#   ohat   . . x . . . x . . . x . . . x .   オフビート・オープンハット
+#   bass   . . x . . . x . . . x . . . x .   オフベース (kickの裏)
 # -----------------------------------------------------------------------------
 
 [[tracks]]
-name     = "kick"
-sample   = 'kick.wav'                                     # 合成キック (samples/gen_kick.py)
-step     = 0.25
-velocity = 120
-rhythm   = { type = "euclidean", hits = 4, steps = 16 }   # 4つ打ち
+name      = "kick"
+sample    = 'Drum - Kick - One Shots/DPT_Kick_One_Shot_Acidtech.wav'
+step      = 0.25
+velocity  = 120
+volume_db = -8.0
+rhythm    = { type = "steps", pattern = "x...x...x...x..." }
 
-# --- hat / bass は Linux 用の合成音源が未生成のため一時無効化 ---
-# setup.py は全トラックのサンプル実在を要求するため、音源を用意したら復活させる。
-# 元の Windows サンプル:
-#   hat : 'Drum - Hat Closed - One Shot\DPT_Hat_Closed_One_Shot_Accent.wav'
-#         step=0.25, velocity=[85,70,70,70,90,70,70,70], euclidean hits=11 steps=16
-#   bass: 'Bass - One Shot\DPT_A_Bass_One_Shot_Lowsub.wav'
-#         step=0.5,  velocity=100, euclidean hits=3 steps=8
+[[tracks]]
+name      = "clap"
+sample    = 'Drum - Clap - One Shots/DPT_Clap_One_Shot_Thin.wav'
+step      = 0.25
+velocity  = 105
+volume_db = -14.0
+rhythm    = { type = "steps", pattern = "....x.......x..." }
+
+[[tracks]]
+name      = "ohat"
+sample    = 'Drum - Hat Open - One Shot/DPT_Hat_Open_One_Shot_Azureshort.wav'
+step      = 0.25
+velocity  = 95
+volume_db = -14.0
+rhythm    = { type = "steps", pattern = "..x...x...x...x." }
+
+[[tracks]]
+name      = "bass"
+sample    = 'Bass - One Shot/DPT_A_Bass_One_Shot_Lowsub.wav'
+step      = 0.25
+velocity  = 100
+volume_db = -18.0
+rhythm    = { type = "steps", pattern = "..x...x...x...x." }
