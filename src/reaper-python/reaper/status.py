@@ -29,7 +29,15 @@ def status(spec: Arrangement) -> bool:
         ok = False
     else:
         print(f"bpm     : {p.bpm}  ok")
-    print(f"tracks  : reaper={p.n_tracks} spec={len(spec.tracks)}")
+    bus_names = spec.bus_names
+    print(f"tracks  : reaper={p.n_tracks} spec={len(spec.tracks)} "
+          f"bus={len(bus_names)}")
+
+    for b in bus_names:
+        present = "ok" if b in by_name else "MISSING"
+        if b not in by_name:
+            ok = False
+        print(f"  {b:5s} bus (folder) {present}")
 
     for st in spec.tracks:
         t = by_name.get(st.name)
@@ -52,7 +60,8 @@ def status(spec: Arrangement) -> bool:
         if not sample_ok:
             print(f"        reaper: {cur or '(empty)'}")
 
-    extra = [n for n in by_name if n not in {t.name for t in spec.tracks}]
+    known = {t.name for t in spec.tracks} | set(bus_names)
+    extra = [n for n in by_name if n not in known]
     if extra:
         print(f"extra   : not in spec: {extra}")
 

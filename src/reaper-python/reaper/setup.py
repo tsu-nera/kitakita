@@ -18,73 +18,100 @@ from reapy import reascript_api as RPR
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from reaper._rea import SAMPLER_FX, find_track, get_file0, norm, sampler_index  # noqa: E402
-from spec import Arrangement, load_spec  # noqa: E402
+from spec import Arrangement, TrackSpec, group_runs, load_spec  # noqa: E402
+
+
+def build_layout(spec: Arrangement) -> list[dict]:
+    """上から並べる Reaper トラック列を導出する。
+
+    各エントリ: name / kind('bus'|'sample') / depth(I_FOLDERDEPTH) / spec。
+    group ごとに親バス(depth=+1)を挿し、最後の子で folder を閉じる(depth=-1)。
+    """
+    layout: list[dict] = []
+    for gname, ts in group_runs(spec.tracks):
+        if gname is not None:
+            layout.append(dict(name=gname, kind="bus", depth=1, spec=None))
+            for i, t in enumerate(ts):
+                layout.append(dict(name=t.name, kind="sample",
+                                   depth=(-1 if i == len(ts) - 1 else 0), spec=t))
+        else:
+            for t in ts:
+                layout.append(dict(name=t.name, kind="sample", depth=0, spec=t))
+    return layout
+
+
+def _reconcile_sample(track, spec_t: TrackSpec) -> str:
+    """sample トラックの RS5k/FILE0/音量を spec に合わせ、状態文字列を返す。"""
+    fx_idx = sampler_index(track)
+    if fx_idx < 0:
+        fx_idx = RPR.TrackFX_AddByName(track.id, SAMPLER_FX, False, -1)
+        if fx_idx < 0:
+            raise RuntimeError(f"could not add {SAMPLER_FX} to {spec_t.name}")
+        fxstate = "fx+"
+    else:
+        fxstate = "fx="
+
+    cur = get_file0(track, fx_idx)
+    want = str(spec_t.sample)
+    if norm(cur) == norm(want):
+        sstate = "sample="
+    else:
+        RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "FILE0", want)
+        RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "DONE", "")
+        sstate = "sample+"
+
+    want_vol = spec_t.volume_linear
+    if abs(RPR.GetMediaTrackInfo_Value(track.id, "D_VOL") - want_vol) < 1e-3:
+        vstate = "vol="
+    else:
+        RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
+        vstate = "vol+"
+    return f"{fxstate} {sstate} {vstate}"
 
 
 def reconcile(spec: Arrangement, dry: bool = False) -> None:
+    for t in spec.tracks:
+        if not t.sample.exists():
+            raise FileNotFoundError(t.sample)
+
     p = reapy.Project()
-    existing_names = [t.name for t in p.tracks]
-    spec_names = {t.name for t in spec.tracks}
+    layout = build_layout(spec)
+    known = {e["name"] for e in layout}
 
-    for spec_t in spec.tracks:
-        if not spec_t.sample.exists():
-            raise FileNotFoundError(spec_t.sample)
+    if dry:
+        for e in layout:
+            tag = "exists" if find_track(p, e["name"]) is not None else "create"
+            print(f"[dry] {e['name']:6s} {e['kind']:6s} depth={e['depth']:+d} ({tag})")
+        print(f"[dry] order: {' > '.join(e['name'] for e in layout)}")
+        extra = [t.name for t in p.tracks if t.name not in known]
+        if extra:
+            print(f"[dry] not in spec (untouched): {extra}")
+        return
 
-        track = find_track(p, spec_t.name)
+    # 1) 存在を担保しつつ各トラックを reconcile
+    for e in layout:
+        track = find_track(p, e["name"])
+        tstate = "exists" if track is not None else "created"
         if track is None:
-            if dry:
-                print(f"[dry] create track {spec_t.name!r} + {SAMPLER_FX}"
-                      f" -> {spec_t.sample.name}")
-                continue
-            track = p.add_track(name=spec_t.name)
-            tstate = "created"
-        else:
-            tstate = "exists"
+            track = p.add_track(name=e["name"])
+        detail = _reconcile_sample(track, e["spec"]) if e["kind"] == "sample" else "bus"
+        print(f"  {e['name']:6s} {tstate:7s} {detail}")
 
-        fx_idx = sampler_index(track)
-        if fx_idx < 0:
-            if dry:
-                print(f"[dry] {spec_t.name}: add {SAMPLER_FX}"
-                      f" -> {spec_t.sample.name}")
-                continue
-            fx_idx = RPR.TrackFX_AddByName(track.id, SAMPLER_FX, False, -1)
-            if fx_idx < 0:
-                raise RuntimeError(f"could not add {SAMPLER_FX} to {spec_t.name}")
-            fxstate = "fx+"
-        else:
-            fxstate = "fx="
+    # 2) layout 順へ並べ替え(左から確定。目的トラックを位置 idx へ引き上げる)
+    for idx, e in enumerate(layout):
+        track = find_track(p, e["name"])
+        RPR.SetOnlyTrackSelected(track.id)
+        RPR.ReorderSelectedTracks(idx, 0)
 
-        cur = get_file0(track, fx_idx)
-        want = str(spec_t.sample)
-        if norm(cur) == norm(want):
-            sstate = "sample="
-        elif dry:
-            print(f"[dry] {spec_t.name}: set sample -> {spec_t.sample.name}")
-            continue
-        else:
-            RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "FILE0", want)
-            RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "DONE", "")
-            sstate = "sample+"
+    # 3) folder 階層(I_FOLDERDEPTH)を設定。並べ替え後に行う
+    for e in layout:
+        track = find_track(p, e["name"])
+        RPR.SetMediaTrackInfo_Value(track.id, "I_FOLDERDEPTH", float(e["depth"]))
 
-        want_vol = spec_t.volume_linear
-        cur_vol = RPR.GetMediaTrackInfo_Value(track.id, "D_VOL")
-        if abs(cur_vol - want_vol) < 1e-3:
-            vstate = "vol="
-        elif dry:
-            print(f"[dry] {spec_t.name}: set vol -> {spec_t.volume_db:+.1f}dB")
-            continue
-        else:
-            RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
-            vstate = "vol+"
-
-        print(f"  {spec_t.name:5s} {tstate:7s} {fxstate} {sstate} {vstate}"
-              f"  {spec_t.sample.name}")
-
-    extra = [n for n in existing_names if n not in spec_names]
+    extra = [t.name for t in p.tracks if t.name not in known]
     if extra:
         print(f"note: {len(extra)} track(s) not in spec (left untouched): {extra}")
-    if not dry:
-        print(f"done. reaper tracks: {p.n_tracks}")
+    print(f"done. reaper tracks: {p.n_tracks}")
 
 
 def main() -> None:
