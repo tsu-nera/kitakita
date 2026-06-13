@@ -37,6 +37,7 @@ class TrackSpec:
     velocity: int | list[int]
     rhythm: Rhythm
     volume_db: float = 0.0   # トラック音量 (dB, 0=ユニティ)。setup.py が D_VOL に反映
+    group: str | None = None  # Reaper folder(バス)名。None=トップレベル
 
     @property
     def volume_linear(self) -> float:
@@ -57,6 +58,33 @@ class Arrangement:
             if t.name == name:
                 return t
         raise KeyError(f"no such track in arrangement: {name}")
+
+    @property
+    def bus_names(self) -> list[str]:
+        """Folder(バス)親の名前一覧。group_runs から導出。"""
+        return [g for g, _ in group_runs(self.tracks) if g is not None]
+
+
+def group_runs(tracks: list[TrackSpec]) -> list[tuple[str | None, list[TrackSpec]]]:
+    """連続する同一 group を (group名|None, [TrackSpec,...]) のランにまとめる。
+
+    Reaper folder は並び順で表現されるため、同じ group が離れて現れると
+    階層が壊れる。非連続な group はここで弾く(正本側の早期エラー)。
+    """
+    runs: list[tuple[str | None, list[TrackSpec]]] = []
+    seen: set[str] = set()
+    for t in tracks:
+        if runs and runs[-1][0] == t.group:
+            runs[-1][1].append(t)
+            continue
+        if t.group is not None and t.group in seen:
+            raise ValueError(
+                f"group {t.group!r} is not contiguous in arrangement.toml "
+                f"(同一グループの track は連続して並べること)")
+        runs.append((t.group, [t]))
+        if t.group is not None:
+            seen.add(t.group)
+    return runs
 
 
 def load_spec(path: str | Path | None = None) -> Arrangement:
@@ -86,6 +114,7 @@ def load_spec(path: str | Path | None = None) -> Arrangement:
             velocity=t["velocity"],
             rhythm=rhythm,
             volume_db=float(t.get("volume_db", 0.0)),
+            group=t.get("group"),
         ))
 
     return Arrangement(
