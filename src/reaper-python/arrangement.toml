@@ -63,7 +63,7 @@ group     = "drums"
 sample    = 'Drum - Clap - One Shots/DPT_Clap_One_Shot_Sola.wav'
 step      = 0.25
 velocity  = 105
-volume_db = -14.0
+volume_db = -10.8
 rhythm    = { type = "steps", pattern = "....x.......x..." }
 
 [[tracks]]
@@ -72,13 +72,13 @@ group     = "drums"
 sample    = 'Drum - Hat Open - One Shot/DPT_Hat_Open_One_Shot_Azureshort.wav'
 step      = 0.25
 velocity  = 95
-volume_db = -14.0
+volume_db = -12.0
 rhythm    = { type = "steps", pattern = "..x...x...x...x." }
 
 [[tracks]]
 name      = "bass"
-sample    = 'Bass - One Shot/DPT_A_Bass_One_Shot_Lowsub.wav'
+sample    = 'Bass - One Shot/DPT_A_Bass_One_Shot_Rez.wav'
 step      = 0.25
 velocity  = 100
-volume_db = -18.0
+volume_db = -9.0
 rhythm    = { type = "steps", pattern = "..x...x...x...x." }
