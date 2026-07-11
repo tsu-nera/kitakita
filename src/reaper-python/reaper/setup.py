@@ -17,7 +17,9 @@ import reapy
 from reapy import reascript_api as RPR
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from reaper._rea import SAMPLER_FX, find_track, get_file0, norm, sampler_index  # noqa: E402
+from reaper._rea import (  # noqa: E402
+    SAMPLER_FX, SYNTH_FX, find_track, get_file0, norm, sampler_index, synth_index,
+)
 from spec import Arrangement, TrackSpec, group_runs, load_spec  # noqa: E402
 
 
@@ -40,6 +42,15 @@ def build_layout(spec: Arrangement) -> list[dict]:
     return layout
 
 
+def _reconcile_volume(track, spec_t: TrackSpec) -> str:
+    """トラック音量 (D_VOL) を spec に合わせ、状態文字列を返す。"""
+    want_vol = spec_t.volume_linear
+    if abs(RPR.GetMediaTrackInfo_Value(track.id, "D_VOL") - want_vol) < 1e-3:
+        return "vol="
+    RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
+    return "vol+"
+
+
 def _reconcile_sample(track, spec_t: TrackSpec) -> str:
     """sample トラックの RS5k/FILE0/音量を spec に合わせ、状態文字列を返す。"""
     fx_idx = sampler_index(track)
@@ -60,18 +71,41 @@ def _reconcile_sample(track, spec_t: TrackSpec) -> str:
         RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "DONE", "")
         sstate = "sample+"
 
-    want_vol = spec_t.volume_linear
-    if abs(RPR.GetMediaTrackInfo_Value(track.id, "D_VOL") - want_vol) < 1e-3:
-        vstate = "vol="
-    else:
-        RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
-        vstate = "vol+"
+    vstate = _reconcile_volume(track, spec_t)
     return f"{fxstate} {sstate} {vstate}"
+
+
+def _reconcile_synth(track, spec_t: TrackSpec) -> str:
+    """lead 等の synth トラックへ ReaSynth を挿し、supersaw 寄りの波形へ寄せる。"""
+    fx_idx = synth_index(track)
+    if fx_idx < 0:
+        fx_idx = RPR.TrackFX_AddByName(track.id, SYNTH_FX, False, -1)
+        if fx_idx < 0:
+            raise RuntimeError(f"could not add {SYNTH_FX} to {spec_t.name}")
+        fxstate = "fx+"
+
+        # supersaw 的な太さへ寄せる: パラメータ名に "sawtooth"/"square" を含む
+        # ものがあれば波形を鋸波側へ振る。ReaSynth のパラメータ名はビルド差が
+        # あるため、見つからなければ何もしない (graceful fallback)。
+        n_params = RPR.TrackFX_GetNumParams(track.id, fx_idx)
+        for p in range(n_params):
+            ret = RPR.TrackFX_GetParamName(track.id, fx_idx, p, "", 256)
+            name = str(ret[4]) if isinstance(ret, (tuple, list)) and len(ret) >= 5 else str(ret)
+            lname = name.lower()
+            if "sawtooth" in lname:
+                RPR.TrackFX_SetParamNormalized(track.id, fx_idx, p, 1.0)
+            elif "square" in lname:
+                RPR.TrackFX_SetParamNormalized(track.id, fx_idx, p, 0.0)
+    else:
+        fxstate = "fx="
+
+    vstate = _reconcile_volume(track, spec_t)
+    return f"{fxstate} {vstate}"
 
 
 def reconcile(spec: Arrangement, dry: bool = False) -> None:
     for t in spec.tracks:
-        if not t.sample.exists():
+        if t.sample is not None and not t.sample.exists():
             raise FileNotFoundError(t.sample)
 
     p = reapy.Project()
@@ -94,7 +128,12 @@ def reconcile(spec: Arrangement, dry: bool = False) -> None:
         tstate = "exists" if track is not None else "created"
         if track is None:
             track = p.add_track(name=e["name"])
-        detail = _reconcile_sample(track, e["spec"]) if e["kind"] == "sample" else "bus"
+        if e["kind"] == "sample":
+            spec_t: TrackSpec = e["spec"]
+            detail = (_reconcile_synth(track, spec_t) if spec_t.instrument == "synth"
+                      else _reconcile_sample(track, spec_t))
+        else:
+            detail = "bus"
         print(f"  {e['name']:6s} {tstate:7s} {detail}")
 
     # 2) layout 順へ並べ替え(左から確定。目的トラックを位置 idx へ引き上げる)

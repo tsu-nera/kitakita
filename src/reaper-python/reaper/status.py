@@ -14,7 +14,7 @@ from pathlib import Path
 import reapy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from reaper._rea import SAMPLER_FX, get_file0, norm, sampler_index  # noqa: E402
+from reaper._rea import SAMPLER_FX, SYNTH_FX, get_file0, norm, sampler_index, synth_index  # noqa: E402
 from spec import Arrangement, load_spec  # noqa: E402
 
 
@@ -45,6 +45,15 @@ def status(spec: Arrangement) -> bool:
             print(f"  {st.name:5s} MISSING (not in Reaper)")
             ok = False
             continue
+        if st.instrument == "synth":
+            fx_idx = synth_index(t)
+            if fx_idx < 0:
+                print(f"  {st.name:5s} no {SYNTH_FX}")
+                ok = False
+                continue
+            print(f"  {st.name:5s} fx=ok items={t.n_items} synth=ok")
+            continue
+
         fx_idx = sampler_index(t)
         if fx_idx < 0:
             print(f"  {st.name:5s} no {SAMPLER_FX}")

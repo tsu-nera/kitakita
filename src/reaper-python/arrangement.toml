@@ -13,7 +13,7 @@
 # =============================================================================
 
 bpm  = 138
-bars = 4
+bars = 8
 
 # ReaSamplomatic5000 のトリガノート（C4=60）。全ドラムトラック共通。
 sampler_note = 60
@@ -24,7 +24,7 @@ sampler_note = 60
 #   Windows 復帰時の元パス : 'C:\Users\fox10\Music\Samples\Black Octopus\Trance Vision'
 sample_root = '/mnt/shared/DTM/Samples/Black Octopus/Trance Vision'
 
-# スケール（現状はサンプラ1音固定で未使用。lead/synth 追加時に使う想定で保持）
+# スケール（lead track の melody.degrees が参照する。degrees はこのスケールの度数）
 [scale]
 root = "A"
 name = "phrygian"   # intervals: 0,1,3,5,7,8,10
@@ -82,3 +82,23 @@ step      = 0.25
 velocity  = 100
 volume_db = -9.0
 rhythm    = { type = "steps", pattern = "..x...x...x...x." }
+
+# -----------------------------------------------------------------------------
+# lead: A Phrygian トランスリード (issue #2)
+#   instrument = "synth": RS5k でなく ReaSynth を挿す (RS5k は C4 固定でメロディ不可)
+#   melody: degrees は [scale] のスケール度数 (0=A, 1=Bb, 2=C, ...)。
+#           durations は各音の拍数。合計が bars*4 に満たなければ先頭からループ。
+#           octave はスケール root の基準オクターブ。gate はノート長の比率。
+# -----------------------------------------------------------------------------
+[[tracks]]
+name       = "lead"
+instrument = "synth"
+velocity   = 100
+volume_db  = -12.0
+melody = { octave = 4, gate = 0.9, degrees = [
+  0, 1, 2,  3, 2, 1,  0, 4,  3, 1, 0,
+  0, 1, 2,  5, 4, 3,  4, 2,  1, 0,
+], durations = [
+  2, 1, 1,  2, 1, 1,  2, 2,  2, 1, 1,
+  2, 1, 1,  2, 1, 1,  2, 2,  2, 2,
+] }

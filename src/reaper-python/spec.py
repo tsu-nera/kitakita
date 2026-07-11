@@ -30,12 +30,22 @@ class Rhythm:
 
 
 @dataclass(frozen=True)
+class Melody:
+    degrees: list[int]     # [scale] のスケール度数の並び (0=root)
+    durations: list[float]  # 各音の拍数。len は degrees と一致必須
+    octave: int = 4         # スケール root の基準オクターブ (4 -> A4=69)
+    gate: float = 0.9       # ノート長 = duration * gate
+
+
+@dataclass(frozen=True)
 class TrackSpec:
     name: str
-    sample: Path          # absolute, resolved against sample_root
-    step: float           # beats per step (0.25 = 16th)
-    velocity: int | list[int]
-    rhythm: Rhythm
+    instrument: str = "sampler"  # "sampler" (RS5k) | "synth" (ReaSynth)
+    sample: Path | None = None   # sampler のみ。absolute, resolved against sample_root
+    step: float = 0.25           # beats per step (0.25 = 16th)。sampler のみ使用
+    velocity: int | list[int] = 100
+    rhythm: Rhythm | None = None  # sampler のみ必須
+    melody: Melody | None = None  # synth のみ必須
     volume_db: float = 0.0   # トラック音量 (dB, 0=ユニティ)。setup.py が D_VOL に反映
     group: str | None = None  # Reaper folder(バス)名。None=トップレベル
 
@@ -100,19 +110,53 @@ def load_spec(path: str | Path | None = None) -> Arrangement:
 
     tracks: list[TrackSpec] = []
     for t in raw["tracks"]:
-        r = t["rhythm"]
-        if r["type"] == "euclidean":
-            rhythm = Rhythm(type="euclidean", hits=int(r["hits"]), steps=int(r["steps"]))
-        elif r["type"] == "steps":
-            rhythm = Rhythm(type="steps", pattern=str(r["pattern"]))
+        instrument = t.get("instrument", "sampler")
+
+        rhythm: Rhythm | None = None
+        sample: Path | None = None
+        melody: Melody | None = None
+
+        if instrument == "sampler":
+            if "sample" not in t or "rhythm" not in t:
+                raise ValueError(
+                    f"track {t.get('name')!r}: instrument=sampler requires "
+                    f"'sample' and 'rhythm'")
+            r = t["rhythm"]
+            if r["type"] == "euclidean":
+                rhythm = Rhythm(type="euclidean", hits=int(r["hits"]), steps=int(r["steps"]))
+            elif r["type"] == "steps":
+                rhythm = Rhythm(type="steps", pattern=str(r["pattern"]))
+            else:
+                raise ValueError(f"unsupported rhythm type: {r['type']!r}")
+            sample = (sample_root / t["sample"]).resolve()
+        elif instrument == "synth":
+            if "melody" not in t:
+                raise ValueError(
+                    f"track {t.get('name')!r}: instrument=synth requires 'melody'")
+            m = t["melody"]
+            degrees = [int(d) for d in m["degrees"]]
+            durations = [float(d) for d in m["durations"]]
+            if len(degrees) != len(durations):
+                raise ValueError(
+                    f"track {t.get('name')!r}: melody.degrees and melody.durations "
+                    f"must have equal length ({len(degrees)} != {len(durations)})")
+            melody = Melody(
+                degrees=degrees,
+                durations=durations,
+                octave=int(m.get("octave", 4)),
+                gate=float(m.get("gate", 0.9)),
+            )
         else:
-            raise ValueError(f"unsupported rhythm type: {r['type']!r}")
+            raise ValueError(f"unsupported instrument: {instrument!r}")
+
         tracks.append(TrackSpec(
             name=t["name"],
-            sample=(sample_root / t["sample"]).resolve(),
-            step=float(t["step"]),
-            velocity=t["velocity"],
+            instrument=instrument,
+            sample=sample,
+            step=float(t.get("step", 0.25)),
+            velocity=t.get("velocity", 100),
             rhythm=rhythm,
+            melody=melody,
             volume_db=float(t.get("volume_db", 0.0)),
             group=t.get("group"),
         ))
@@ -131,6 +175,11 @@ if __name__ == "__main__":
     a = load_spec()
     print(f"bpm={a.bpm} bars={a.bars} scale={a.scale_root} {a.scale_name}")
     for t in a.tracks:
-        exists = "ok" if t.sample.exists() else "MISSING"
-        print(f"  {t.name:5s} euclid({t.rhythm.hits},{t.rhythm.steps}) "
-              f"step={t.step} vel={t.velocity}  [{exists}] {t.sample.name}")
+        if t.instrument == "synth":
+            n = len(t.melody.degrees)
+            print(f"  {t.name:5s} synth  melody(notes={n}) "
+                  f"octave={t.melody.octave} gate={t.melody.gate} vel={t.velocity}")
+        else:
+            exists = "ok" if t.sample.exists() else "MISSING"
+            print(f"  {t.name:5s} sampler euclid({t.rhythm.hits},{t.rhythm.steps}) "
+                  f"step={t.step} vel={t.velocity}  [{exists}] {t.sample.name}")

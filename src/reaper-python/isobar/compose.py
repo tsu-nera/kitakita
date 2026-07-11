@@ -16,7 +16,7 @@ import isobar as iso
 from mido import Message, MetaMessage, MidiFile, MidiTrack, bpm2tempo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from spec import Arrangement, TrackSpec, load_spec  # noqa: E402
+from spec import Arrangement, Melody, TrackSpec, load_spec  # noqa: E402
 
 TICKS_PER_BEAT = 480
 OUT_DIR = Path(__file__).resolve().parents[1] / "output"
@@ -105,7 +105,44 @@ def _velocity_pattern(track: TrackSpec):
     return v if isinstance(v, int) else iso.PSequence(list(v))
 
 
+def melody_to_events(melody: Melody, velocity: int, spec: Arrangement) -> list[Event]:
+    """Turn a Melody (scale degrees + durations) into absolute-beat Events.
+
+    isobar's Key resolves a str tonic via note_name_to_midi_note, which
+    without an octave suffix returns a *pitch class* (0..11), not a MIDI
+    note (verified in isobar/util.py: octave defaults to -1, so the result
+    is `index` alone). We therefore rebuild the MIDI base note ourselves
+    from melody.octave, and add key.scale.get(degree) (semitone offset from
+    the scale root, degree>=7 rolls into higher octaves automatically) —
+    NOT key.get(degree), which would add key.tonic a second time.
+    """
+    key = iso.Key(spec.scale_root, spec.scale_name)
+    base = 12 * (melody.octave + 1) + (key.tonic % 12)
+
+    total_beats = spec.bars * 4
+    events: list[Event] = []
+    beat = 0.0
+    i = 0
+    n = len(melody.degrees)
+    while beat < total_beats:
+        degree = melody.degrees[i % n]
+        dur = melody.durations[i % n]
+        pitch = base + key.scale.get(degree)
+        events.append(Event(
+            beat=beat,
+            pitch=pitch,
+            velocity=velocity,
+            duration=dur * melody.gate,
+        ))
+        beat += dur
+        i += 1
+    return events
+
+
 def compose_track(track: TrackSpec, spec: Arrangement) -> list[Event]:
+    if track.melody is not None:
+        velocity = track.velocity if isinstance(track.velocity, int) else track.velocity[0]
+        return melody_to_events(track.melody, velocity, spec)
     return pattern_to_events(
         rhythm=_rhythm_pattern(track),
         pitch=spec.sampler_note,

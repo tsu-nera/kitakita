@@ -11,6 +11,7 @@ import os
 from reapy import reascript_api as RPR
 
 SAMPLER_FX = "ReaSamplomatic5000"
+SYNTH_FX = "ReaSynth"
 
 
 def norm(p: str | os.PathLike) -> str:
@@ -53,5 +54,14 @@ def sampler_index(track) -> int:
             return i
     for i in range(n):
         if get_file0(track, i):
+            return i
+    return -1
+
+
+def synth_index(track) -> int:
+    """Index of the ReaSynth instance, or -1."""
+    n = track.n_fxs
+    for i in range(n):
+        if "reasynth" in _fx_name(track, i).lower():
             return i
     return -1
