@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from kita.midi import track_events
-from kita.model import Event, Song, Track
+from kita.model import Event, Sampler, Song, Synth, Track
 
 SR = 44100
 BALANCE_BARS = 4  # バランス計測はデフォルト clip の4小節ループで行う(セクション構成に非依存)
@@ -67,10 +67,54 @@ def _render_events(events: list[Event], sample: np.ndarray, gain: float,
     return buf
 
 
+def _osc(freq: float, n: int, wave: str) -> np.ndarray:
+    """n サンプルの単一オシレータ波形 (-1..1)。"""
+    ph = np.arange(n) * (freq / SR)
+    frac = ph - np.floor(ph)
+    if wave == "square":
+        return np.where(frac < 0.5, 1.0, -1.0)
+    if wave == "triangle":
+        return 2.0 * np.abs(2.0 * frac - 1.0) - 1.0
+    if wave == "sine":
+        return np.sin(2 * np.pi * ph)
+    return 2.0 * frac - 1.0  # saw (既定)
+
+
+def _render_synth(events: list[Event], wave: str, gain: float,
+                  bpm: float, total_bars: int) -> np.ndarray:
+    """melody Event 列を wave のオシレータ + 簡易 AR エンベロープでオフライン合成。
+
+    実機 ReaSynth と絶対値は一致しないが、他トラックとの相対バランス計測用。
+    """
+    spb = 60.0 / bpm
+    total = int(total_bars * 4 * spb * SR) + SR
+    buf = np.zeros(total)
+    atk, rel = int(0.005 * SR), int(0.02 * SR)
+    for ev in events:
+        s = int(ev.beat * spb * SR)
+        dur = max(1, int(ev.duration * spb * SR))
+        e = min(s + dur, total)
+        m = e - s
+        if m <= 0:
+            continue
+        freq = 440.0 * 2 ** ((ev.pitch - 69) / 12.0)
+        seg = _osc(freq, m, wave)
+        env = np.ones(m)  # AR: 頭 atk で立上げ、尻 rel で減衰
+        a = min(atk, m)
+        env[:a] = np.linspace(0, 1, a)
+        r = min(rel, m)
+        env[m - r:] = np.linspace(1, 0, r)
+        buf[s:e] += seg * env * gain * (ev.velocity / 127.0)
+    return buf
+
+
 def render_track_full(song: Song, track: Track, gain_db: float | None = None) -> np.ndarray:
     """全セクション通しの1トラック。gain_db で song の音量を上書き可。"""
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
-    return _render_events(track_events(song, track), load_mono(song.sample_path(track)),
+    events = track_events(song, track)
+    if isinstance(track.instrument, Synth):
+        return _render_synth(events, track.instrument.wave, gain, song.bpm, song.total_bars)
+    return _render_events(events, load_mono(song.sample_path(track)),
                           gain, song.bpm, song.total_bars)
 
 
@@ -79,6 +123,8 @@ def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
     """デフォルト clip の bars 小節ループ。バランス計測用(セクションの無音に汚されない)。"""
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
     events = track.clip.events(bars, track.instrument.note)
+    if isinstance(track.instrument, Synth):
+        return _render_synth(events, track.instrument.wave, gain, song.bpm, bars)
     return _render_events(events, load_mono(song.sample_path(track)),
                           gain, song.bpm, bars)
 
@@ -225,7 +271,11 @@ def render(song: Song, out: Path) -> None:
 def bands(song: Song, target: str) -> None:
     """1サンプルの帯域スペクトル。target は track名 or パス(sample_root 相対/絶対)。"""
     try:
-        path = song.sample_path(song.track(target))
+        tr = song.track(target)
+        if isinstance(tr.instrument, Synth):
+            print(f"'{target}' は synth トラック(サンプル無し)。bands はサンプル専用。")
+            return
+        path = song.sample_path(tr)
     except KeyError:
         p = Path(target)
         path = p if p.is_absolute() else song.sample_root / target

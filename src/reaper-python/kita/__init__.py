@@ -7,8 +7,9 @@ from kita.model import (  # noqa: F401
     Sampler,
     Section,
     Song,
+    Synth,
     Track,
     load_song,
     section,
 )
-from kita.patterns import euclid, steps  # noqa: F401
+from kita.patterns import euclid, melody, steps  # noqa: F401

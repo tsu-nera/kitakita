@@ -11,8 +11,8 @@ pure Python + REAPER でトランスを作るワークフロー（Issue #6）。
 ```
 song.py (正本: Song を構築する宣言的コード)
   └─ kita/
-      model.py     Song/Section/Track/Sampler/Event — 安定インターフェース
-      patterns.py  Clip ビルダー (steps/euclid)。パターン解釈はここだけが知る
+      model.py     Song/Section/Track/Sampler/Synth/Event — 安定インターフェース
+      patterns.py  Clip ビルダー (steps/euclid/melody)。パターン解釈はここだけが知る
       midi.py      Song → output/*.mid (セクションを連結、1トラック1ファイル)
       sim.py       オフライン合成 + 計測 (check/suggest/render/bands)
       cli.py       `uv run kita <cmd>`
@@ -27,7 +27,7 @@ song.py (正本: Song を構築する宣言的コード)
 
 ```bash
 uv run kita compose        # song.py -> output/*.mid
-uv run kita sync           # トラック/バス/RS5k/BPM/リージョンを冪等反映 (--dry で予告)
+uv run kita sync           # トラック/バス/RS5k・ReaSynth/BPM/リージョンを冪等反映 (--dry で予告)
 uv run kita load           # output/*.mid を各トラックへ流し込み
 uv run kita check          # 聴かずに計測: バランス + セクション別エネルギーカーブ
 uv run kita loop breakdown # セクション名でループ範囲を設定 (拍数/off も可)

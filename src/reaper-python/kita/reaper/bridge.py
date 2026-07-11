@@ -10,6 +10,7 @@ import os
 from reapy import reascript_api as RPR
 
 SAMPLER_FX = "ReaSamplomatic5000"
+SYNTH_FX = "ReaSynth"
 
 
 def norm(p: str | os.PathLike) -> str:
@@ -54,6 +55,24 @@ def sampler_index(track) -> int:
         if get_file0(track, i):
             return i
     return -1
+
+
+def synth_index(track) -> int:
+    """Index of the ReaSynth instance, or -1."""
+    for i in range(track.n_fxs):
+        if "reasynth" in _fx_name(track, i).lower():
+            return i
+    return -1
+
+
+def synth_param_indices(track, fx_idx: int) -> dict[str, int]:
+    """ReaSynth のパラメータ名 → index。波形 mix を名前で引くため(index はビルド差あり)。"""
+    out: dict[str, int] = {}
+    for i in range(int(RPR.TrackFX_GetNumParams(track.id, fx_idx))):
+        ret = RPR.TrackFX_GetParamName(track.id, fx_idx, i, "", 256)
+        name = str(ret[4]) if isinstance(ret, (tuple, list)) and len(ret) >= 5 else str(ret)
+        out[name.lower()] = i
+    return out
 
 
 def list_regions(project) -> list[tuple[str, float, float, int]]:
