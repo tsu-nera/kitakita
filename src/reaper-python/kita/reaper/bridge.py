@@ -1,8 +1,7 @@
-"""Shared Reaper-side helpers (sampler detection, path compare).
+"""Shared Reaper-side helpers (sampler detection, path compare, region enum).
 
-setup.py and status.py must agree on "is the sampler present?", so that
-logic lives here once. Imported as `from reaper._rea import ...` (reaper/ is
-an implicit namespace package; scripts put the project root on sys.path).
+reconcile と status は「サンプラは在るか」「リージョンはどう並んでいるか」の
+判定を共有する必要があるので、その解釈はここに一度だけ置く。
 """
 from __future__ import annotations
 
@@ -55,3 +54,23 @@ def sampler_index(track) -> int:
         if get_file0(track, i):
             return i
     return -1
+
+
+def list_regions(project) -> list[tuple[str, float, float, int]]:
+    """(name, start_sec, end_sec, displayed_number) の列。マーカーは含まない。
+
+    EnumProjectMarkers 系は nameOut が char** のため dist API 越しに名前が
+    取れない。GetRegionOrMarker 系(REAPER 7+)を使うこと。
+    """
+    regions = []
+    for i in range(int(RPR.GetNumRegionsOrMarkers(project.id))):
+        pm = RPR.GetRegionOrMarker(project.id, i, "")
+        if not RPR.GetRegionOrMarkerInfo_Value(project.id, pm, "B_ISREGION"):
+            continue
+        start = RPR.GetRegionOrMarkerInfo_Value(project.id, pm, "D_STARTPOS")
+        end = RPR.GetRegionOrMarkerInfo_Value(project.id, pm, "D_ENDPOS")
+        num = RPR.GetRegionOrMarkerInfo_Value(project.id, pm, "I_NUMBER")
+        ret = RPR.GetSetRegionOrMarkerInfo_String(project.id, pm, "P_NAME", "", False)
+        name = str(ret[4]) if isinstance(ret, (tuple, list)) and len(ret) >= 5 else ""
+        regions.append((name, float(start), float(end), int(num)))
+    return regions

@@ -155,7 +155,7 @@ wheels = [
 [[package]]
 name = "reaper-python"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "isobar" },
     { name = "mido" },

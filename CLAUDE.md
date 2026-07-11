@@ -36,7 +36,9 @@ grep -r "duck" tmp/strudel/website/src/pages/learn/
 
 ## REAPERドキュメント検索
 
-`src/reaper-python/` はコード駆動（isobar 作曲 → MIDI → reapy で REAPER 制御）。
+`src/reaper-python/` はコード駆動。正本は `song.py`（Python DSL）で、`uv run kita <cmd>`
+（compose/sync/load/check 等）が MIDI 生成・reapy での REAPER 反映・オフライン計測を行う。
+詳細は `src/reaper-python/README.md`。
 REAPER の関数・API について質問されたら、**Web検索でなくローカルを検索**してください。
 （GUI の操作手順だけはローカルに無いため Web 検索可）
 
@@ -62,7 +64,7 @@ grep -i "RPR_.*Tempo" tmp/reaper/reascripthelp.html
 ## プロジェクト構成
 
 - `src/strudel/` - Strudelパターンファイル (.str)
-- `src/reaper-python/` - pure Python + REAPER ワークフロー（isobar/reapy）
+- `src/reaper-python/` - pure Python + REAPER ワークフロー（song.py 正本 + kita CLI）
 - `tmp/strudel/` - Strudelリポジトリ（ドキュメント参照用、git 非追跡）
 - `tmp/reaper/` - ReaScript API ドキュメント（git 非追跡）
 - `doc/` - プロジェクトドキュメント

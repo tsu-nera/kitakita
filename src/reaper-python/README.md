@@ -1,7 +1,50 @@
 # reaper-python
 
-pure Python + REAPER でトランスの一部を作るワークフロー（Issue #6）。
-isobar で作曲 → MIDI 書き出し → reapy で REAPER を制御して再生する。
+pure Python + REAPER でトランスを作るワークフロー（Issue #6）。
+
+- **正本は `song.py`**（Python DSL で `Song` を宣言的に構築）。REAPER は片方向の描画先で、手で REAPER を編集しても正本はここ。
+- 展開はセクション（`section()`）で表現し、REAPER のリージョンとして反映される。
+- モデル/人間が聴かずにミックスと展開を検証できるよう、オフライン計測（`kita check`）を備える。
+
+## アーキテクチャ
+
+```
+song.py (正本: Song を構築する宣言的コード)
+  └─ kita/
+      model.py     Song/Section/Track/Sampler/Event — 安定インターフェース
+      patterns.py  Clip ビルダー (steps/euclid)。パターン解釈はここだけが知る
+      midi.py      Song → output/*.mid (セクションを連結、1トラック1ファイル)
+      sim.py       オフライン合成 + 計測 (check/suggest/render/bands)
+      cli.py       `uv run kita <cmd>`
+      reaper/      reapy で REAPER を冪等制御 (sync/load/transport/proc)
+```
+
+音楽的な語彙を増やすとき（fill、メロディ、オートメーション…）はスキーマ定義ではなく
+`patterns.py` に Clip ビルダーを足す。パイプライン（midi/sim/reaper）は `Song` と
+`Event` しか見ないので変更不要。
+
+## ワークフロー
+
+```bash
+uv run kita compose        # song.py -> output/*.mid
+uv run kita sync           # トラック/バス/RS5k/BPM/リージョンを冪等反映 (--dry で予告)
+uv run kita load           # output/*.mid を各トラックへ流し込み
+uv run kita check          # 聴かずに計測: バランス + セクション別エネルギーカーブ
+uv run kita loop breakdown # セクション名でループ範囲を設定 (拍数/off も可)
+uv run kita play / stop / panic / bpm 140
+uv run kita status         # 走行中 REAPER と song.py の差分表示
+uv run kita suggest        # 目標バランスへ寄せる gain_db を提案
+uv run kita render out.wav # 全曲オフライン合成 (A/B・試聴用)
+uv run kita bands bass     # サンプルの帯域スペクトル
+uv run kita reaper start|stop|restart|status   # REAPER プロセス制御 (Linux)
+```
+
+`compose / check / suggest / render / bands` はオフラインで動く（REAPER 不要）。
+それ以外は REAPER 起動中 + reapy ブリッジが必要。
+
+> **サンプルについて**: `song.py` の `SAMPLES`（sample_root）配下の wav を参照する。
+> 無い環境では `uv run python samples/gen_kick.py` で合成キックを生成し
+> sample_root を `'samples'` に向けて代用する。`sync` は全サンプルの実在を要求する。
 
 ## 環境構築
 
@@ -17,7 +60,7 @@ cd src/reaper-python
 uv sync
 ```
 
-主要依存: isobar(作曲) / mido(MIDI書出) / reapy-next(REAPER制御) / reathon。
+主要依存: mido(MIDI書出) / numpy(計測) / reapy-next(REAPER制御) / isobar(将来のメロディ生成用) / reathon。
 
 > **Python は 3.12 系に固定**（`pyproject.toml` の `requires-python = ">=3.11,<3.13"`）。
 > reapy-next が依存する標準ライブラリ `lib2to3` は **Python 3.13 で削除された**ため、
@@ -41,6 +84,10 @@ uv run python -c "import reapy; reapy.configure_reaper()"
 uv run python -c "import reapy; print(reapy.Project().n_tracks)"
 # REAPER と繋がっていればトラック数が表示される
 ```
+
+> **dist API の制約**: `EnumProjectMarkers*` のような `char**` 出力は名前が取れない。
+> リージョン名の読み取りには `GetRegionOrMarker` 系 (REAPER 7+) を使う
+> （`kita/reaper/bridge.py:list_regions`）。
 
 ### CachyOS / Arch 系 Linux 固有
 
@@ -81,29 +128,11 @@ sudo pacman -S pipewire-jack   # jack2 の削除を促されたら yes
   登録されていれば正常。REAPER 側は Options → Preferences → Audio → Device で
   Audio system が JACK になっていること。
 
-## ワークフロー
-
-```bash
-uv run python samples/gen_kick.py  # 合成サンプル生成 (samples/*.wav は git 管理外)
-uv run python isobar/compose.py    # MIDI 生成
-uv run python reaper/setup.py      # arrangement.toml に従いトラック調整 (冪等)
-uv run python reaper/load.py       # REAPER に読込
-uv run python reaper/transport.py loop 16
-uv run python reaper/transport.py play
-```
-
-アレンジの正本は `arrangement.toml`。
-
-> **サンプルについて**: 本来は Windows 上の Black Octopus サンプルを使うが、
-> Linux 環境ではそれが無いため `samples/gen_kick.py` で合成キックを生成して代用する。
-> `samples/*.wav` は再生成可能なため git 管理外。`setup.py` は全トラックのサンプル
-> 実在を要求するので、ワークフロー実行前に必ず生成しておくこと。
-
 ## ディレクトリ
 
 | パス | 内容 |
 |------|------|
-| `isobar/` | 作曲 (compose.py / patterns) |
-| `reaper/` | REAPER 制御 (setup / load / transport / control / status) |
-| `arrangement.toml` | アレンジ正本 |
-| `spec.py` | arrangement.toml のローダ |
+| `song.py` | 曲の正本（DSL） |
+| `kita/` | ライブラリ + CLI |
+| `samples/` | 合成サンプル生成（wav は git 管理外） |
+| `output/` | 生成 MIDI（git 管理外） |
