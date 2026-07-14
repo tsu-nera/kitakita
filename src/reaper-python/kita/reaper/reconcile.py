@@ -9,15 +9,25 @@ from __future__ import annotations
 import reapy
 from reapy import reascript_api as RPR
 
-from kita.model import Song, Track, group_runs
+from kita.model import Sampler, Song, Synth, Track, group_runs
 from kita.reaper.bridge import (
     SAMPLER_FX,
+    SYNTH_FX,
     find_track,
     get_file0,
     list_regions,
     norm,
     sampler_index,
+    synth_index,
+    synth_param_indices,
 )
+
+# ReaSynth を wave=<key> にするための正規化パラメータ。全 "* mix" を明示リセット
+# してから当該波形だけ上げる(前回別波形で残った mix を消すため)。Sustain を上げて
+# ノートを持続させ、素の ReaSynth では鳴らない(全 mix=0 初期値)状態を避ける。
+_WAVE_MIX = {"saw": "saw mix", "square": "square mix",
+             "triangle": "triangle mix", "sine": "extra sine mix"}
+_ALL_MIX = ("saw mix", "square mix", "triangle mix", "extra sine mix")
 
 
 def build_layout(song: Song) -> list[dict]:
@@ -56,6 +66,15 @@ def regions_match(existing: list[tuple[str, float, float, int]],
                for (en, es, ee, _), (dn, ds, de) in zip(ex, desired))
 
 
+def _reconcile_volume(track, spec_t: Track) -> str:
+    """トラック音量 (D_VOL) を song の gain_db に合わせ、状態文字列を返す。"""
+    want_vol = spec_t.gain_linear
+    if abs(RPR.GetMediaTrackInfo_Value(track.id, "D_VOL") - want_vol) < 1e-3:
+        return "vol="
+    RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
+    return "vol+"
+
+
 def _reconcile_sample(track, spec_t: Track, want_file: str) -> str:
     """sample トラックの RS5k/FILE0/音量を song に合わせ、状態文字列を返す。"""
     fx_idx = sampler_index(track)
@@ -74,13 +93,31 @@ def _reconcile_sample(track, spec_t: Track, want_file: str) -> str:
         RPR.TrackFX_SetNamedConfigParm(track.id, fx_idx, "DONE", "")
         sstate = "sample+"
 
-    want_vol = spec_t.gain_linear
-    if abs(RPR.GetMediaTrackInfo_Value(track.id, "D_VOL") - want_vol) < 1e-3:
-        vstate = "vol="
+    return f"{fxstate} {sstate} {_reconcile_volume(track, spec_t)}"
+
+
+def _reconcile_synth(track, spec_t: Track) -> str:
+    """synth (lead) トラックへ ReaSynth を挿し、wave に応じた mix / 音量へ寄せる。"""
+    inst: Synth = spec_t.instrument
+    fx_idx = synth_index(track)
+    if fx_idx < 0:
+        fx_idx = RPR.TrackFX_AddByName(track.id, SYNTH_FX, False, -1)
+        if fx_idx < 0:
+            raise RuntimeError(f"could not add {SYNTH_FX} to {spec_t.name}")
+        fxstate = "fx+"
     else:
-        RPR.SetMediaTrackInfo_Value(track.id, "D_VOL", want_vol)
-        vstate = "vol+"
-    return f"{fxstate} {sstate} {vstate}"
+        fxstate = "fx="
+
+    params = synth_param_indices(track, fx_idx)
+    want = _WAVE_MIX.get(inst.wave, "saw mix")
+    for mix in _ALL_MIX:  # 選択波形以外を 0、選択波形を 1 に
+        if mix in params:
+            RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params[mix],
+                                           1.0 if mix == want else 0.0)
+    if "sustain" in params:  # 持続音のため sustain を上げる(既定 0.5)
+        RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params["sustain"], 1.0)
+
+    return f"{fxstate} wave={inst.wave} {_reconcile_volume(track, spec_t)}"
 
 
 def _reconcile_regions(p, song: Song, dry: bool) -> None:
@@ -102,7 +139,7 @@ def _reconcile_regions(p, song: Song, dry: bool) -> None:
 
 def reconcile(song: Song, dry: bool = False) -> None:
     for t in song.tracks:
-        if not song.sample_path(t).exists():
+        if isinstance(t.instrument, Sampler) and not song.sample_path(t).exists():
             raise FileNotFoundError(song.sample_path(t))
 
     p = reapy.Project()
@@ -132,8 +169,12 @@ def reconcile(song: Song, dry: bool = False) -> None:
         tstate = "exists" if track is not None else "created"
         if track is None:
             track = p.add_track(name=e["name"])
-        detail = (_reconcile_sample(track, e["track"], str(song.sample_path(e["track"])))
-                  if e["kind"] == "sample" else "bus")
+        if e["kind"] == "bus":
+            detail = "bus"
+        elif isinstance(e["track"].instrument, Synth):
+            detail = _reconcile_synth(track, e["track"])
+        else:
+            detail = _reconcile_sample(track, e["track"], str(song.sample_path(e["track"])))
         print(f"  {e['name']:6s} {tstate:7s} {detail}")
 
     # 2) layout 順へ並べ替え(左から確定。目的トラックを位置 idx へ引き上げる)
@@ -181,6 +222,14 @@ def status(song: Song) -> bool:
         if t is None:
             print(f"  {st.name:5s} MISSING (not in Reaper)")
             ok = False
+            continue
+        if isinstance(st.instrument, Synth):
+            if synth_index(t) < 0:
+                print(f"  {st.name:5s} no {SYNTH_FX}")
+                ok = False
+            else:
+                print(f"  {st.name:5s} fx=ok items={t.n_items} synth=ok "
+                      f"(wave={st.instrument.wave})")
             continue
         fx_idx = sampler_index(t)
         if fx_idx < 0:

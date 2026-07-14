@@ -39,14 +39,30 @@ class Sampler:
     """RS5k one-shot instrument. `sample` is relative to Song.sample_root."""
     sample: str
     note: int = 60
-    # 将来の席: leads #2 では Plugin(name, preset) を並べ、Track.instrument の
-    # union にする。reconcile 側は instrument の型で分岐する。
+
+
+@dataclass(frozen=True)
+class Synth:
+    """ReaSynth 音源 (leads #2)。RS5k は C4 固定でメロディ不可のため、ピッチ可変の
+    ReaSynth を使う。melodic な Clip (patterns.melody) と組で使う想定。
+
+    wave は主オシレータ波形 ("saw"|"square"|"triangle"|"sine")。reconcile は
+    対応する "* mix" パラメータを 1.0 にし他を 0 にする。sim は同じ波形を
+    オフライン合成してバランス計測へ乗せる。
+    note は Clip プロトコル (events(bars, note)) を満たすためだけの席で、melodic
+    clip は無視する (自前で degree→pitch を解決する)。
+    """
+    wave: str = "saw"
+    note: int = 60
+
+
+Instrument = Sampler | Synth
 
 
 @dataclass(frozen=True)
 class Track:
     name: str
-    instrument: Sampler
+    instrument: Instrument
     clip: Clip                # デフォルトパターン。section が差し替えない限りこれ
     gain_db: float = 0.0
     group: str | None = None  # Reaper folder(バス)。同一 group は連続して並べること

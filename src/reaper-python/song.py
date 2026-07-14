@@ -10,7 +10,7 @@
 #   uv run kita load      # output/*.mid を各トラックへ流し込み
 #   uv run kita check     # 聴かずに計測(バランス + セクション別エネルギー)
 # =============================================================================
-from kita import Sampler, Song, Track, section, steps
+from kita import Sampler, Song, Synth, Track, melody, section, steps
 
 # 各トラックの sample はここからの相対パス。
 # Windows 復帰時の元パス: 'C:\\Users\\fox10\\Music\\Samples\\Black Octopus\\Trance Vision'
@@ -37,9 +37,25 @@ bass = Track("bass", Sampler("Bass - One Shot/DPT_A_Bass_One_Shot_Rez.wav"),
 
 DRUMS = [kick, clap, ohat, bass]
 
-# 展開 (Issue #5): コアループ → drums を抜いた 8小節 breakdown → コアループ
-song = Song(bpm=138, sample_root=SAMPLES, tracks=DRUMS, sections=[
-    section("core_a", 16, DRUMS),
-    section("breakdown", 8, [bass]),
-    section("core_b", 16, DRUMS),
+# -----------------------------------------------------------------------------
+# lead: A Phrygian トランスリード (Issue #2)。RS5k は C4 固定でメロディ不可のため
+#   ReaSynth(saw) を使う。degrees は A Phrygian のスケール度数 (0=A, 1=Bb, 2=C,
+#   3=D, 4=E, 5=F, 7=A の1オクターブ上)。durations は各音の拍数(合計32拍=8小節で
+#   1フレーズ)。長めの音価でトランスらしく歌わせ、breakdown では主役として残す。
+# -----------------------------------------------------------------------------
+lead = Track("lead", Synth(wave="saw"), melody(
+    "A", "phrygian",
+    degrees=[0, 1, 2, 3, 2, 1, 0, 4, 3, 1, 0,  0, 1, 2, 5, 4, 3, 4, 2, 1, 0],
+    durations=[2, 1, 1, 2, 1, 1, 2, 2, 2, 1, 1,  2, 1, 1, 2, 1, 1, 2, 2, 2, 2],
+    octave=4, vel=100, gate=0.9,
+), gain_db=-12.0)
+
+CORE = DRUMS + [lead]
+
+# 展開 (Issue #5, #2): コアループ → drums を抜いた 8小節 breakdown(bass+lead が主役)
+#   → コアループ。lead は全区間で鳴らし続ける。
+song = Song(bpm=138, sample_root=SAMPLES, tracks=CORE, sections=[
+    section("core_a", 16, CORE),
+    section("breakdown", 8, [bass, lead]),
+    section("core_b", 16, CORE),
 ])
