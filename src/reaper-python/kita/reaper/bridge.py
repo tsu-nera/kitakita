@@ -11,6 +11,8 @@ from reapy import reascript_api as RPR
 
 SAMPLER_FX = "ReaSamplomatic5000"
 SYNTH_FX = "ReaSynth"
+FILTER_FX = "filters/resonantlowpass"  # 同梱 JSFX "Resonant Lowpass Filter"
+FILTER_FX_TAG = "resonant lowpass"     # FX 名からの検出タグ
 
 
 def norm(p: str | os.PathLike) -> str:
@@ -61,6 +63,14 @@ def synth_index(track) -> int:
     """Index of the ReaSynth instance, or -1."""
     for i in range(track.n_fxs):
         if "reasynth" in _fx_name(track, i).lower():
+            return i
+    return -1
+
+
+def filter_index(track) -> int:
+    """Index of the JSFX Resonant Lowpass Filter instance, or -1."""
+    for i in range(track.n_fxs):
+        if FILTER_FX_TAG in _fx_name(track, i).lower():
             return i
     return -1
 

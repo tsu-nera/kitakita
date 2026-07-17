@@ -49,11 +49,20 @@ class Synth:
     wave は主オシレータ波形 ("saw"|"square"|"triangle"|"sine")。reconcile は
     対応する "* mix" パラメータを 1.0 にし他を 0 にする。sim は同じ波形を
     オフライン合成してバランス計測へ乗せる。
+    sustain は ReaSynth の sustain(正規化 0..1)。1.0=持続音(lead 既定)、0.0=
+    プラッキーな短い減衰(mid bass の転がり)。reconcile と sim の両方が読む。
+    cutoff は JSFX "Resonant Lowpass Filter" のカットオフ(Hz)。None=フィルタ無し。
+    ReaSynth はフィルタを持たないため、cutoff 指定時に reconcile が JSFX を後段へ
+    挿す(トランスの「レゾナンスLPF」担当)。resonance は 0..1。sim は未モデル
+    (オフライン計測はフィルタ前の生 saw を測る)。
     note は Clip プロトコル (events(bars, note)) を満たすためだけの席で、melodic
     clip は無視する (自前で degree→pitch を解決する)。
     """
     wave: str = "saw"
     note: int = 60
+    sustain: float = 1.0
+    cutoff: float | None = None
+    resonance: float = 0.2
 
 
 Instrument = Sampler | Synth

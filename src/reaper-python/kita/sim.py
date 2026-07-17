@@ -81,15 +81,16 @@ def _osc(freq: float, n: int, wave: str) -> np.ndarray:
 
 
 def _render_synth(events: list[Event], wave: str, gain: float,
-                  bpm: float, total_bars: int) -> np.ndarray:
-    """melody Event 列を wave のオシレータ + 簡易 AR エンベロープでオフライン合成。
+                  bpm: float, total_bars: int, sustain: float = 1.0) -> np.ndarray:
+    """melody Event 列を wave のオシレータ + ADSR 風エンベロープでオフライン合成。
 
-    実機 ReaSynth と絶対値は一致しないが、他トラックとの相対バランス計測用。
+    sustain<1 なら decay で sustain レベルまで落とし、プラック(mid bass の転がり)を
+    再現する。実機 ReaSynth と絶対値は一致しないが、他トラックとの相対バランス計測用。
     """
     spb = 60.0 / bpm
     total = int(total_bars * 4 * spb * SR) + SR
     buf = np.zeros(total)
-    atk, rel = int(0.005 * SR), int(0.02 * SR)
+    atk, dcy, rel = int(0.005 * SR), int(0.06 * SR), int(0.02 * SR)
     for ev in events:
         s = int(ev.beat * spb * SR)
         dur = max(1, int(ev.duration * spb * SR))
@@ -99,11 +100,14 @@ def _render_synth(events: list[Event], wave: str, gain: float,
             continue
         freq = 440.0 * 2 ** ((ev.pitch - 69) / 12.0)
         seg = _osc(freq, m, wave)
-        env = np.ones(m)  # AR: 頭 atk で立上げ、尻 rel で減衰
+        env = np.full(m, float(sustain))  # ADSR: A立上げ→D減衰→S維持→R減衰
         a = min(atk, m)
         env[:a] = np.linspace(0, 1, a)
+        d1 = min(a + dcy, m)
+        if d1 > a:
+            env[a:d1] = np.linspace(1.0, sustain, d1 - a)
         r = min(rel, m)
-        env[m - r:] = np.linspace(1, 0, r)
+        env[m - r:] *= np.linspace(1, 0, r)
         buf[s:e] += seg * env * gain * (ev.velocity / 127.0)
     return buf
 
@@ -113,7 +117,8 @@ def render_track_full(song: Song, track: Track, gain_db: float | None = None) ->
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
     events = track_events(song, track)
     if isinstance(track.instrument, Synth):
-        return _render_synth(events, track.instrument.wave, gain, song.bpm, song.total_bars)
+        return _render_synth(events, track.instrument.wave, gain, song.bpm,
+                             song.total_bars, track.instrument.sustain)
     return _render_events(events, load_mono(song.sample_path(track)),
                           gain, song.bpm, song.total_bars)
 
@@ -124,7 +129,8 @@ def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
     events = track.clip.events(bars, track.instrument.note)
     if isinstance(track.instrument, Synth):
-        return _render_synth(events, track.instrument.wave, gain, song.bpm, bars)
+        return _render_synth(events, track.instrument.wave, gain, song.bpm, bars,
+                             track.instrument.sustain)
     return _render_events(events, load_mono(song.sample_path(track)),
                           gain, song.bpm, bars)
 
@@ -215,6 +221,15 @@ def check(song: Song) -> None:
         c = overlap_corr(stems["kick"], stems["bass"])
         verdict = "食い合い" if c > 0.4 else ("やや重なり" if c > 0.15 else "住み分けOK")
         print(f"  low-band overlap corr = {c:+.2f}  ({verdict})")
+
+    bass_tracks = [t.name for t in song.tracks if "bass" in t.name]
+    if bass_tracks:
+        print("\n=== bass 帯域配分 (自スペクトル内シェア) ===")
+        print(f"{'track':8s}{'低域<120':>10s}{'中域250-800':>12s}")
+        for n in bass_tracks:
+            lo = 100 * band_share(stems[n], 30, 120)
+            mid = 100 * band_share(stems[n], 250, 800)
+            print(f"{n:8s}{lo:>9.0f}%{mid:>11.0f}%")
 
     if song.sections:
         full_mix, _ = render_full_mix(song)
