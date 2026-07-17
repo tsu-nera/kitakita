@@ -38,6 +38,24 @@ bass = Track("bass", Sampler("Bass - One Shot/DPT_A_Bass_One_Shot_Rez.wav"),
 DRUMS = [kick, clap, ohat, bass]
 
 # -----------------------------------------------------------------------------
+# mid bass (Issue #12): 中域(250–800Hz)の「転がるベース」を ReaSynth(saw) で新設。
+#   bass(サンプル)は <80Hz の sub 担当のまま、midbass が中域を埋める。
+#   リズム: 各拍 [休符, 16分×3] で kick 裏を転がす(頭を休符にして kick と住み分け)。
+#   octave2(A2≈110Hz)で基音は低いが saw 倍音が 250–800Hz を満たす。
+#   sustain=0.0 + gate=0.55 でプラッキーな短い減衰=転がり。
+#   ReaSynth はフィルタ非搭載のため後段に JSFX resonant LPF(cutoff/resonance)を挿す。
+#   ルート進行: A→A→F→G (A Phrygian の i–i–VI–VII)。degree 4=E,5=F,6=G。
+#   → 音作り(saw→envelope→filter)はここで確立し、lead(#2) の音色改善へ流用する。
+# bar ごとのルート degree(A→A→F→G)。各拍を [休符, root, root, root] に展開して転がす。
+_ROOTS = [0, 0, 5, 6]
+midbass = Track("midbass", Synth(wave="saw", sustain=0.0, cutoff=1000, resonance=0.35), melody(
+    "A", "phrygian",
+    degrees=[d for root in _ROOTS for _ in range(4) for d in (None, root, root, root)],
+    durations=[0.25] * 64,
+    octave=2, vel=100, gate=0.55,
+), gain_db=-7.0)
+
+# -----------------------------------------------------------------------------
 # lead: A Phrygian トランスリード (Issue #2)。RS5k は C4 固定でメロディ不可のため
 #   ReaSynth(saw) を使う。degrees は A Phrygian のスケール度数 (0=A, 1=Bb, 2=C,
 #   3=D, 4=E, 5=F, 7=A の1オクターブ上)。durations は各音の拍数(合計32拍=8小節で
@@ -50,12 +68,12 @@ lead = Track("lead", Synth(wave="saw"), melody(
     octave=4, vel=100, gate=0.9,
 ), gain_db=-12.0)
 
-CORE = DRUMS + [lead]
+CORE = DRUMS + [midbass, lead]
 
-# 展開 (Issue #5, #2): コアループ → drums を抜いた 8小節 breakdown(bass+lead が主役)
-#   → コアループ。lead は全区間で鳴らし続ける。
+# 展開 (Issue #5, #2, #12): コアループ → drums を抜いた 8小節 breakdown
+#   (sub + midbass + lead が主役) → コアループ。lead は全区間で鳴らし続ける。
 song = Song(bpm=138, sample_root=SAMPLES, tracks=CORE, sections=[
     section("core_a", 16, CORE),
-    section("breakdown", 8, [bass, lead]),
+    section("breakdown", 8, [bass, midbass, lead]),
     section("core_b", 16, CORE),
 ])

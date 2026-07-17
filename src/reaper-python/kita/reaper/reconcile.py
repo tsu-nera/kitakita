@@ -11,8 +11,10 @@ from reapy import reascript_api as RPR
 
 from kita.model import Sampler, Song, Synth, Track, group_runs
 from kita.reaper.bridge import (
+    FILTER_FX,
     SAMPLER_FX,
     SYNTH_FX,
+    filter_index,
     find_track,
     get_file0,
     list_regions,
@@ -114,10 +116,36 @@ def _reconcile_synth(track, spec_t: Track) -> str:
         if mix in params:
             RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params[mix],
                                            1.0 if mix == want else 0.0)
-    if "sustain" in params:  # 持続音のため sustain を上げる(既定 0.5)
-        RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params["sustain"], 1.0)
+    if "sustain" in params:  # 音源ごとの sustain(lead=1.0持続 / midbass=0.0プラック)
+        RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params["sustain"], inst.sustain)
 
-    return f"{fxstate} wave={inst.wave} {_reconcile_volume(track, spec_t)}"
+    fstate = _reconcile_filter(track, inst)
+    return (f"{fxstate} wave={inst.wave} sus={inst.sustain:.1f} {fstate} "
+            f"{_reconcile_volume(track, spec_t)}")
+
+
+def _reconcile_filter(track, inst: Synth) -> str:
+    """ReaSynth の後段に JSFX resonant LPF を冪等制御する。
+
+    inst.cutoff=None ならフィルタを外し、Hz 指定ならフィルタを挿して
+    Frequency(param0, 生Hz)/Resonance(param1, 0..1) を寄せる。
+    """
+    idx = filter_index(track)
+    if inst.cutoff is None:
+        if idx >= 0:
+            RPR.TrackFX_Delete(track.id, idx)
+            return "filt-"
+        return "filt="
+    if idx < 0:
+        idx = RPR.TrackFX_AddByName(track.id, FILTER_FX, False, -1)
+        if idx < 0:
+            raise RuntimeError(f"could not add {FILTER_FX} to {track.name}")
+        added = "filt+"
+    else:
+        added = "filt="
+    RPR.TrackFX_SetParam(track.id, idx, 0, float(inst.cutoff))
+    RPR.TrackFX_SetParam(track.id, idx, 1, float(inst.resonance))
+    return f"{added}({inst.cutoff:.0f}Hz/r{inst.resonance:.2f})"
 
 
 def _reconcile_regions(p, song: Song, dry: bool) -> None:

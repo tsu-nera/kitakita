@@ -94,7 +94,7 @@ class MelodyClip:
     """
     root: str
     scale: str
-    degrees: tuple[int, ...]
+    degrees: tuple[int | None, ...]  # None = 休符(rest): その音価ぶん進めて発音しない
     durations: tuple[float, ...]
     octave: int = 4      # root の基準オクターブ (4 → A4=69)
     velocity: int = 100
@@ -110,15 +110,17 @@ class MelodyClip:
         n = len(self.degrees)
         while beat < total_beats - 1e-9:
             dur = self.durations[i % n]
-            pitch = base + _degree_to_semitone(self.degrees[i % n], intervals)
-            events.append(Event(beat=beat, pitch=pitch, velocity=self.velocity,
-                                duration=dur * self.gate))
+            deg = self.degrees[i % n]
+            if deg is not None:  # None は休符 → beat だけ進める
+                pitch = base + _degree_to_semitone(deg, intervals)
+                events.append(Event(beat=beat, pitch=pitch, velocity=self.velocity,
+                                    duration=dur * self.gate))
             beat += dur
             i += 1
         return events
 
 
-def melody(root: str, scale: str, degrees: list[int], durations: list[float],
+def melody(root: str, scale: str, degrees: list[int | None], durations: list[float],
            octave: int = 4, vel: int = 100, gate: float = 0.9) -> MelodyClip:
     if len(degrees) != len(durations):
         raise ValueError(
