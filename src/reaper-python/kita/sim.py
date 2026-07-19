@@ -26,7 +26,7 @@ SR = 44100
 BALANCE_BARS = 4  # バランス計測はデフォルト clip の4小節ループで行う(セクション構成に非依存)
 # suggest の目標: kick を基準に各トラックのピークを何 dB 下に置くか。
 # トランス・ドラムの定番的な並び(kick最前 → bass → clap → hat が後ろ)。
-TARGET_PEAK_UNDER_KICK = {"bass": -2.5, "clap": -4.0, "ohat": -6.0}
+TARGET_PEAK_UNDER_KICK = {"sub": -2.5, "clap": -4.0, "ohat": -6.0}
 
 
 def load_mono(path: Path) -> np.ndarray:
@@ -214,15 +214,15 @@ def check(song: Song) -> None:
     clip = "CLIP!" if peak_db(mix) > 0 else "headroom ok"
     print(f"loop mix: RMS {rms_db(mix):.1f} dBFS  peak {peak_db(mix):.1f} dBFS  {clip}")
 
-    if "kick" in stems and "bass" in stems:
-        print("\n=== kick vs bass low-end (30-120Hz) ===")
-        for n in ("kick", "bass"):
+    if "kick" in stems and "sub" in stems:
+        print("\n=== kick vs sub low-end (30-120Hz) ===")
+        for n in ("kick", "sub"):
             print(f"  {n:6s} low-share {100 * band_share(stems[n], 30, 120):.0f}%")
-        c = overlap_corr(stems["kick"], stems["bass"])
+        c = overlap_corr(stems["kick"], stems["sub"])
         verdict = "食い合い" if c > 0.4 else ("やや重なり" if c > 0.15 else "住み分けOK")
         print(f"  low-band overlap corr = {c:+.2f}  ({verdict})")
 
-    bass_tracks = [t.name for t in song.tracks if "bass" in t.name]
+    bass_tracks = [t.name for t in song.tracks if t.name == "sub" or "bass" in t.name]
     if bass_tracks:
         print("\n=== bass 帯域配分 (自スペクトル内シェア) ===")
         print(f"{'track':8s}{'低域<120':>10s}{'中域250-800':>12s}")
