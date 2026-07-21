@@ -9,17 +9,22 @@ from __future__ import annotations
 import reapy
 from reapy import reascript_api as RPR
 
+from kita.duck import duck_points_song
 from kita.model import Sampler, Song, Synth, Track, group_runs
 from kita.reaper.bridge import (
     FILTER_FX,
     SAMPLER_FX,
     SYNTH_FX,
+    ensure_volume_envelope,
+    envelope_points,
     filter_index,
     find_track,
     get_file0,
+    get_volume_envelope,
     list_regions,
     norm,
     sampler_index,
+    set_envelope_points,
     synth_index,
     synth_param_indices,
 )
@@ -148,6 +153,41 @@ def _reconcile_filter(track, inst: Synth) -> str:
     return f"{added}({inst.cutoff:.0f}Hz/r{inst.resonance:.2f})"
 
 
+def _duck_target_points(song: Song, spec_t: Track) -> list[tuple[float, float]]:
+    """spec_t.duck の点列に track の gain_linear を掛けた、envelope に書くべき値。
+
+    Volume エンベロープは有効時にトラックフェーダーを置き換えるため、
+    duck_gain 単独ではなく gain_linear * duck_gain を書く必要がある。
+    """
+    gain = spec_t.gain_linear
+    return [(t, gain * v) for t, v in duck_points_song(song, spec_t)]
+
+
+def _duck_points_match(existing: list[tuple[float, float]],
+                       desired: list[tuple[float, float]], tol: float = 1e-3) -> bool:
+    if len(existing) != len(desired):
+        return False
+    return all(abs(et - dt) < tol and abs(ev - dv) < tol
+               for (et, ev), (dt, dv) in zip(existing, desired))
+
+
+def _reconcile_duck(track, song: Song, spec_t: Track) -> str:
+    """Volume エンベロープの ducking 点列を song に合わせ、状態文字列を返す。"""
+    if spec_t.duck is None:
+        env = get_volume_envelope(track)
+        if env is not None and envelope_points(env):
+            set_envelope_points(env, [])
+            return "duck-"
+        return "duck="
+
+    desired = _duck_target_points(song, spec_t)
+    env = ensure_volume_envelope(track)
+    if _duck_points_match(envelope_points(env), desired):
+        return "duck="
+    set_envelope_points(env, desired)
+    return f"duck+({spec_t.duck.depth_db:+.1f}dB/{len(desired)}pt)"
+
+
 def _reconcile_regions(p, song: Song, dry: bool) -> None:
     desired = desired_regions(song)
     existing = list_regions(p)
@@ -181,6 +221,11 @@ def reconcile(song: Song, dry: bool = False) -> None:
             tag = "exists" if find_track(p, e["name"]) is not None else "create"
             print(f"[dry] {e['name']:6s} {e['kind']:6s} depth={e['depth']:+d} ({tag})")
         print(f"[dry] order: {' > '.join(e['name'] for e in layout)}")
+        for t in song.tracks:
+            if t.duck is not None:
+                n_pts = len(_duck_target_points(song, t))
+                print(f"[dry] {t.name:6s} duck <- {t.duck.source} "
+                      f"depth={t.duck.depth_db:+.1f}dB ({n_pts}pt planned)")
         _reconcile_regions(p, song, dry=True)
         extra = [t.name for t in p.tracks if t.name not in known]
         if extra:
@@ -203,6 +248,8 @@ def reconcile(song: Song, dry: bool = False) -> None:
             detail = _reconcile_synth(track, e["track"])
         else:
             detail = _reconcile_sample(track, e["track"], str(song.sample_path(e["track"])))
+        if e["kind"] != "bus":
+            detail = f"{detail} {_reconcile_duck(track, song, e['track'])}"
         print(f"  {e['name']:6s} {tstate:7s} {detail}")
 
     # 2) layout 順へ並べ替え(左から確定。目的トラックを位置 idx へ引き上げる)
@@ -274,6 +321,26 @@ def status(song: Song) -> bool:
               f"  ({song.sample_path(st).name})")
         if not sample_ok:
             print(f"        reaper: {cur or '(empty)'}")
+
+    for st in song.tracks:
+        t = by_name.get(st.name)
+        if t is None:
+            continue
+        env = get_volume_envelope(t)
+        existing = envelope_points(env) if env is not None else []
+        if st.duck is None:
+            flag = "ok" if not existing else "DRIFT (stale points)"
+            if existing:
+                ok = False
+            print(f"  {st.name:5s} duck none  {flag}")
+            continue
+        desired = _duck_target_points(song, st)
+        duck_ok = _duck_points_match(existing, desired)
+        flag = "ok" if duck_ok else "DRIFT"
+        if not duck_ok:
+            ok = False
+        print(f"  {st.name:5s} duck<-{st.duck.source:6s} "
+              f"points={len(existing)}/{len(desired)}  {flag}")
 
     desired = desired_regions(song)
     existing = list_regions(p)
