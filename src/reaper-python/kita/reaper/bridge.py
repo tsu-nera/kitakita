@@ -85,6 +85,54 @@ def synth_param_indices(track, fx_idx: int) -> dict[str, int]:
     return out
 
 
+TOGGLE_VOLUME_ENVELOPE = 40406  # Track: Toggle track volume envelope visible
+
+
+def get_volume_envelope(track):
+    """Volume エンベロープを返す(無ければ None)。作りたい場合は
+    ensure_volume_envelope を使うこと(表示トグルで生成)。
+
+    reapy の dist API は無い場合も NULL ポインタの文字列表現
+    "(TrackEnvelope*)0x0000000000000000" を返す(空文字/0 ではない)ので、
+    reapy.core.reapy_object の判定パターンに合わせて末尾で見る。
+    """
+    env = RPR.GetTrackEnvelopeByName(track.id, "Volume")
+    if not env or str(env).endswith("0x0000000000000000"):
+        return None
+    return env
+
+
+def ensure_volume_envelope(track):
+    """Volume エンベロープを取得し、無ければ action 40406 で作ってから返す。"""
+    env = get_volume_envelope(track)
+    if env is not None:
+        return env
+    RPR.SetOnlyTrackSelected(track.id)
+    RPR.Main_OnCommand(TOGGLE_VOLUME_ENVELOPE, 0)
+    env = get_volume_envelope(track)
+    if env is None:
+        raise RuntimeError(f"could not create volume envelope on {track.name}")
+    return env
+
+
+def envelope_points(env) -> list[tuple[float, float]]:
+    """(time, value) の列。時間順は CountEnvelopePoints の並び(通常は昇順)。"""
+    pts = []
+    for i in range(int(RPR.CountEnvelopePoints(env))):
+        ret = RPR.GetEnvelopePoint(env, i, 0.0, 0.0, 0, 0.0, False)
+        # ret: (retval, envelope, ptidx, timeOut, valueOut, shapeOut, tensionOut, selectedOut)
+        pts.append((float(ret[3]), float(ret[4])))
+    return pts
+
+
+def set_envelope_points(env, points: list[tuple[float, float]]) -> None:
+    """既存点を全消しして points(linear shape 固定)を書き直す。"""
+    RPR.DeleteEnvelopePointRange(env, -1e9, 1e9)
+    for t, v in points:
+        RPR.InsertEnvelopePoint(env, t, v, 0, 0.0, False, True)
+    RPR.Envelope_SortPoints(env)
+
+
 def list_regions(project) -> list[tuple[str, float, float, int]]:
     """(name, start_sec, end_sec, displayed_number) の列。マーカーは含まない。
 

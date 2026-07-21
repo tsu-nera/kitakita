@@ -10,7 +10,7 @@
 #   uv run kita load      # output/*.mid を各トラックへ流し込み
 #   uv run kita check     # 聴かずに計測(バランス + セクション別エネルギー)
 # =============================================================================
-from kita import Sampler, Song, Synth, Track, melody, section, steps
+from kita import Duck, Sampler, Song, Synth, Track, melody, section, steps
 
 # 各トラックの sample はここからの相対パス。
 # Windows 復帰時の元パス: 'C:\\Users\\fox10\\Music\\Samples\\Black Octopus\\Trance Vision'
@@ -45,15 +45,17 @@ _ROOTS = [0, 0, 5, 6]
 #   転がりは midbass(#12)へ譲り、sub は 1小節1音の pedal(最小限の動き)で根音を支える。
 #   ルートは _ROOTS を共有(A→A→F→G)、octave1 で midbass のちょうど1オクターブ下
 #   (A1=55/F2=87/G2=98Hz)。sustain=1.0 で持続する土台。
+#   ducking(#16): kick 拍で -9dB へ沈める beat-locked volume envelope を付け、
+#   kick との加算を切ってから gain_db を -13.0 → -11.0 へ引き上げた(#13 時点の
+#   天井は sidechain 非モデルだったための制約で、ducking 導入で外れた。sub の
+#   低域絶対量が kick を上回らない範囲でのキャップは kita check で確認済み)。
 # -----------------------------------------------------------------------------
 sub = Track("sub", Synth(wave="sine", sustain=1.0), melody(
     "A", "phrygian",
     degrees=_ROOTS,          # 1小節1音の pedal
     durations=[4, 4, 4, 4],
     octave=1, vel=100, gate=0.92,
-), gain_db=-13.0)  # sustained sine は連続低域で headroom を食う(sidechain 非モデル)。
-#   kita check スイープで clip 手前の天井(mix peak≒-0.2)。kick は依然低域リード
-#   (sub<80Hz≒26% / kick≒61%)。これ以上の存在感は sidechain/kick 調整が要る。
+), gain_db=-11.0, duck=Duck("kick", depth_db=-9.0, attack=0.01, release=0.18))
 
 # -----------------------------------------------------------------------------
 # mid bass (Issue #12): 中域(250–800Hz)の「転がるベース」を ReaSynth(saw) で新設。
@@ -69,7 +71,7 @@ midbass = Track("midbass", Synth(wave="saw", sustain=0.0, cutoff=1000, resonance
     degrees=[d for root in _ROOTS for _ in range(4) for d in (None, root, root, root)],
     durations=[0.25] * 64,
     octave=2, vel=100, gate=0.55,
-), gain_db=-7.0)
+), gain_db=-7.0, duck=Duck("kick", depth_db=-9.0, attack=0.01, release=0.18))
 
 # -----------------------------------------------------------------------------
 # lead: A Phrygian トランスリード (Issue #2)。RS5k は C4 固定でメロディ不可のため

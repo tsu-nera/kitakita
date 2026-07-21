@@ -10,15 +10,19 @@ Event 列は midi.py と同じ Clip.events() 由来 — パターン解釈の二
 
 注意: RS5k のエンベロープ/フィルタ等は再現しない(素のサンプル再生を仮定)。
 トラック"間"の相対バランスと展開の形を見るのが目的で、絶対値は実機と一致しない。
+一方 ducking(#16) は kita/duck.py の点列を実機(volume envelope)と共有するため、
+サンプル単位で正確に再現される。
 """
 from __future__ import annotations
 
 import math
 import wave
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
+from kita.duck import duck_points_loop, duck_points_song
 from kita.midi import track_events
 from kita.model import Event, Sampler, Song, Synth, Track
 
@@ -112,27 +116,52 @@ def _render_synth(events: list[Event], wave: str, gain: float,
     return buf
 
 
+def _apply_duck(buf: np.ndarray, points: list[tuple[float, float]]) -> np.ndarray:
+    """(time_sec, gain_linear) の点列をサンプル単位のゲイン配列へ展開し buf へ乗算する。
+
+    点列の範囲外は 1.0(np.interp の left/right)。空点列なら無変更。
+    """
+    if not points:
+        return buf
+    times = np.array([p[0] for p in points])
+    gains = np.array([p[1] for p in points])
+    t = np.arange(len(buf)) / SR
+    env = np.interp(t, times, gains, left=1.0, right=1.0)
+    return buf * env
+
+
 def render_track_full(song: Song, track: Track, gain_db: float | None = None) -> np.ndarray:
     """全セクション通しの1トラック。gain_db で song の音量を上書き可。"""
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
     events = track_events(song, track)
     if isinstance(track.instrument, Synth):
-        return _render_synth(events, track.instrument.wave, gain, song.bpm,
-                             song.total_bars, track.instrument.sustain)
-    return _render_events(events, load_mono(song.sample_path(track)),
-                          gain, song.bpm, song.total_bars)
+        buf = _render_synth(events, track.instrument.wave, gain, song.bpm,
+                            song.total_bars, track.instrument.sustain)
+    else:
+        buf = _render_events(events, load_mono(song.sample_path(track)),
+                             gain, song.bpm, song.total_bars)
+    if track.duck is not None:
+        buf = _apply_duck(buf, duck_points_song(song, track))
+    return buf
 
 
 def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
                      gain_db: float | None = None) -> np.ndarray:
-    """デフォルト clip の bars 小節ループ。バランス計測用(セクションの無音に汚されない)。"""
+    """デフォルト clip の bars 小節ループ。バランス計測用(セクションの無音に汚されない)。
+
+    duck は必ずこの bars 長の点列(duck_points_loop)を使う — 全曲の点列を流用しない。
+    """
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
     events = track.clip.events(bars, track.instrument.note)
     if isinstance(track.instrument, Synth):
-        return _render_synth(events, track.instrument.wave, gain, song.bpm, bars,
-                             track.instrument.sustain)
-    return _render_events(events, load_mono(song.sample_path(track)),
-                          gain, song.bpm, bars)
+        buf = _render_synth(events, track.instrument.wave, gain, song.bpm, bars,
+                            track.instrument.sustain)
+    else:
+        buf = _render_events(events, load_mono(song.sample_path(track)),
+                             gain, song.bpm, bars)
+    if track.duck is not None:
+        buf = _apply_duck(buf, duck_points_loop(song, track, bars))
+    return buf
 
 
 def _mix(stems: dict[str, np.ndarray]) -> np.ndarray:
@@ -215,12 +244,32 @@ def check(song: Song) -> None:
     print(f"loop mix: RMS {rms_db(mix):.1f} dBFS  peak {peak_db(mix):.1f} dBFS  {clip}")
 
     if "kick" in stems and "sub" in stems:
-        print("\n=== kick vs sub low-end (30-120Hz) ===")
+        print("\n=== kick vs sub low-end (30-120Hz, post-duck) ===")
         for n in ("kick", "sub"):
             print(f"  {n:6s} low-share {100 * band_share(stems[n], 30, 120):.0f}%")
         c = overlap_corr(stems["kick"], stems["sub"])
         verdict = "食い合い" if c > 0.4 else ("やや重なり" if c > 0.15 else "住み分けOK")
         print(f"  low-band overlap corr = {c:+.2f}  ({verdict})")
+        sub_track = song.track("sub")
+        if sub_track.duck is not None:  # duck 無しと比較して pump の効果を可読化
+            sub_noduck = render_clip_loop(song, replace(sub_track, duck=None))
+            c0 = overlap_corr(stems["kick"], sub_noduck)
+            print(f"  low-band overlap corr (duck無し) = {c0:+.2f}  "
+                  f"(duck 適用で Δ{c - c0:+.2f})")
+
+    ducked = [t for t in song.tracks if t.duck is not None]
+    if ducked:
+        print("\n=== ducking (RMS: duck無し → duck適用, loopぶん) ===")
+        for t in ducked:
+            d = t.duck
+            n_pts = len(duck_points_loop(song, t, BALANCE_BARS))
+            with_duck = stems[t.name]
+            without = render_clip_loop(song, replace(t, duck=None))
+            print(f"  {t.name:6s} <- {d.source:6s} depth={d.depth_db:+.1f}dB "
+                  f"attack={d.attack * 1000:.0f}ms release={d.release * 1000:.0f}ms "
+                  f"({n_pts}pt/{BALANCE_BARS}bar)  "
+                  f"RMS {rms_db(without):.1f} -> {rms_db(with_duck):.1f} dBFS "
+                  f"(Δ{rms_db(with_duck) - rms_db(without):+.1f})")
 
     bass_tracks = [t.name for t in song.tracks if t.name == "sub" or "bass" in t.name]
     if bass_tracks:
