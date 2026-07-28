@@ -116,20 +116,32 @@ def ensure_volume_envelope(track):
 
 
 def envelope_points(env) -> list[tuple[float, float]]:
-    """(time, value) の列。時間順は CountEnvelopePoints の並び(通常は昇順)。"""
+    """(time, gain_linear) の列。時間順は CountEnvelopePoints の並び(通常は昇順)。
+
+    格納値は envelope の scaling mode 依存なので linear gain へ戻して返す
+    (set_envelope_points と対の変換。呼び出し側は linear 前提)。
+    """
+    mode = RPR.GetEnvelopeScalingMode(env)
     pts = []
     for i in range(int(RPR.CountEnvelopePoints(env))):
         ret = RPR.GetEnvelopePoint(env, i, 0.0, 0.0, 0, 0.0, False)
         # ret: (retval, envelope, ptidx, timeOut, valueOut, shapeOut, tensionOut, selectedOut)
-        pts.append((float(ret[3]), float(ret[4])))
+        pts.append((float(ret[3]), float(RPR.ScaleFromEnvelopeMode(mode, ret[4]))))
     return pts
 
 
 def set_envelope_points(env, points: list[tuple[float, float]]) -> None:
-    """既存点を全消しして points(linear shape 固定)を書き直す。"""
+    """既存点を全消しして points(linear gain / shape 固定)を書き直す。
+
+    Volume envelope は既定で fader-scaling(mode=1)。生の linear をそのまま書くと
+    REAPER が ScaleFromEnvelopeMode で解釈し直し、実効ゲインが無音付近まで沈む。
+    ScaleToEnvelopeMode で envelope の scaling domain へ変換してから格納する。
+    """
+    mode = RPR.GetEnvelopeScalingMode(env)
     RPR.DeleteEnvelopePointRange(env, -1e9, 1e9)
     for t, v in points:
-        RPR.InsertEnvelopePoint(env, t, v, 0, 0.0, False, True)
+        RPR.InsertEnvelopePoint(env, t, RPR.ScaleToEnvelopeMode(mode, v),
+                                0, 0.0, False, True)
     RPR.Envelope_SortPoints(env)
 
 
