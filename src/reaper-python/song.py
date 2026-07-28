@@ -50,7 +50,7 @@ _ROOTS = [0, 0, 5, 6]
 #   天井は sidechain 非モデルだったための制約で、ducking 導入で外れた。sub の
 #   低域絶対量が kick を上回らない範囲でのキャップは kita check で確認済み)。
 # -----------------------------------------------------------------------------
-sub = Track("sub", Synth(wave="sine", sustain=1.0), melody(
+subbass = Track("subbass", Synth(wave="sine", sustain=1.0), melody(
     "A", "phrygian",
     degrees=_ROOTS,          # 1小節1音の pedal
     durations=[4, 4, 4, 4],
@@ -86,12 +86,12 @@ lead = Track("lead", Synth(wave="saw"), melody(
     octave=4, vel=100, gate=0.9,
 ), gain_db=-12.0)
 
-CORE = DRUMS + [sub, midbass, lead]
+CORE = DRUMS + [subbass, midbass, lead]
 
 # 展開 (Issue #5, #2, #12): コアループ → drums を抜いた 8小節 breakdown
 #   (sub + midbass + lead が主役) → コアループ。lead は全区間で鳴らし続ける。
 song = Song(bpm=138, sample_root=SAMPLES, tracks=CORE, sections=[
     section("core_a", 16, CORE),
-    section("breakdown", 8, [sub, midbass, lead]),
+    section("breakdown", 8, [subbass, midbass, lead]),
     section("core_b", 16, CORE),
 ])
