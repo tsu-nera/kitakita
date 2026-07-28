@@ -55,7 +55,7 @@ sub = Track("sub", Synth(wave="sine", sustain=1.0), melody(
     degrees=_ROOTS,          # 1小節1音の pedal
     durations=[4, 4, 4, 4],
     octave=1, vel=100, gate=0.92,
-), gain_db=-11.0, duck=Duck("kick", depth_db=-9.0, attack=0.01, release=0.18))
+), gain_db=-11.0, duck=Duck("kick", depth_db=-14.0, attack=0.01, release=0.30))
 
 # -----------------------------------------------------------------------------
 # mid bass (Issue #12): 中域(250–800Hz)の「転がるベース」を ReaSynth(saw) で新設。
@@ -71,7 +71,7 @@ midbass = Track("midbass", Synth(wave="saw", sustain=0.0, cutoff=1000, resonance
     degrees=[d for root in _ROOTS for _ in range(4) for d in (None, root, root, root)],
     durations=[0.25] * 64,
     octave=2, vel=100, gate=0.55,
-), gain_db=-7.0, duck=Duck("kick", depth_db=-9.0, attack=0.01, release=0.18))
+), gain_db=-7.0, duck=Duck("kick", depth_db=-14.0, attack=0.01, release=0.30))
 
 # -----------------------------------------------------------------------------
 # lead: A Phrygian トランスリード (Issue #2)。RS5k は C4 固定でメロディ不可のため
