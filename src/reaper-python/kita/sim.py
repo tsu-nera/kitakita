@@ -223,6 +223,29 @@ def overlap_corr(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sum(al * bl) / (math.sqrt(np.sum(al ** 2) * np.sum(bl ** 2)) + 1e-12))
 
 
+def pump_depth_db(x: np.ndarray, beats: list[float], bpm: float,
+                  win: float = 0.02) -> float:
+    """拍上と拍間で低域パワーを比べた「実効 pump 深さ」(dB)。負ほど沈む。
+
+    overlap_corr では pump を測れない: あれは正規化された位相相関で、sub のような
+    持続サイン波は kick 窓の中で正負が打ち消し合うため、振幅をいくら凹ませても
+    値がほとんど動かない(#16 で Δ0.00 を確認)。pump は振幅ドメインの量なので、
+    拍位置の窓と拍間(半拍後)の窓のパワー比で直接測る。
+    """
+    lo = lowband(x)
+    spb = 60.0 / bpm
+    w = max(1, int(win * SR))
+
+    def power_at(t: float) -> float:
+        s = int(t * SR)
+        e = min(s + w, len(lo))
+        return float(np.mean(lo[s:e] ** 2)) if e > s else 0.0
+
+    on = float(np.mean([power_at(b * spb) for b in beats]))
+    off = float(np.mean([power_at(b * spb + 0.5 * spb) for b in beats]))
+    return 10 * math.log10((on + 1e-18) / (off + 1e-18))
+
+
 # ---------- commands ----------
 
 def check(song: Song) -> None:
@@ -260,16 +283,22 @@ def check(song: Song) -> None:
     ducked = [t for t in song.tracks if t.duck is not None]
     if ducked:
         print("\n=== ducking (RMS: duck無し → duck適用, loopぶん) ===")
+        beats = list(range(BALANCE_BARS * 4))  # kick=4つ打ち → 全拍が duck 起点
         for t in ducked:
             d = t.duck
             n_pts = len(duck_points_loop(song, t, BALANCE_BARS))
             with_duck = stems[t.name]
             without = render_clip_loop(song, replace(t, duck=None))
+            # pump 深さ(拍上 vs 拍間の低域パワー比)。overlap_corr は持続音の pump を
+            # 測れず Δ0 になるため、振幅ドメインで直接測って可読化する。
+            p_off = pump_depth_db(without, beats, song.bpm)
+            p_on = pump_depth_db(with_duck, beats, song.bpm)
             print(f"  {t.name:6s} <- {d.source:6s} depth={d.depth_db:+.1f}dB "
                   f"attack={d.attack * 1000:.0f}ms release={d.release * 1000:.0f}ms "
                   f"({n_pts}pt/{BALANCE_BARS}bar)  "
                   f"RMS {rms_db(without):.1f} -> {rms_db(with_duck):.1f} dBFS "
-                  f"(Δ{rms_db(with_duck) - rms_db(without):+.1f})")
+                  f"(Δ{rms_db(with_duck) - rms_db(without):+.1f})  "
+                  f"pump {p_off:+.1f} -> {p_on:+.1f} dB (Δ{p_on - p_off:+.1f})")
 
     bass_tracks = [t.name for t in song.tracks if t.name == "sub" or "bass" in t.name]
     if bass_tracks:
