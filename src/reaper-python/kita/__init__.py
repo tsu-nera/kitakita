@@ -3,6 +3,7 @@
 song.py が書きやすいよう DSL の語彙をトップレベルへ再輸出する。
 """
 from kita.model import (  # noqa: F401
+    Duck,
     Event,
     Sampler,
     Section,

@@ -69,13 +69,29 @@ Instrument = Sampler | Synth
 
 
 @dataclass(frozen=True)
+class Duck:
+    """拍グリッド駆動の ducking (ADR-001: sidechain 非採用)。
+
+    source トラックのノート拍を引き金に、このトラックを一時的に凹ませる。
+    信号キーの sidechain compression だと sim(オフライン計測)が実信号追従を
+    モデル化せねばならず重い上に実機と一致する保証も無い。拍グリッドなら
+    点列は決定的に1つに決まり、sim と reaper reconcile が同じ点列を使えるので
+    「sim で検証できる = 実機と一致する」が構造的に保証される(kita/duck.py 参照)。
+    """
+    source: str      # 引き金となるトラック名(このトラックのノート拍で沈む)
+    depth_db: float  # 最も沈んだ点のゲイン
+    attack: float    # 秒。source の拍の attack 秒前から落ち始める
+    release: float   # 秒。拍から release 秒かけて 1.0 へ戻る
+
+
+@dataclass(frozen=True)
 class Track:
     name: str
     instrument: Instrument
     clip: Clip                # デフォルトパターン。section が差し替えない限りこれ
     gain_db: float = 0.0
     group: str | None = None  # Reaper folder(バス)。同一 group は連続して並べること
-    # 将来の席: fx: tuple = ()  — FX #4 (sidechain/reverb) の reconcile 対象
+    duck: Duck | None = None  # 拍ドリブン ducking(#16)。None なら適用しない
 
     @property
     def gain_linear(self) -> float:
@@ -120,6 +136,18 @@ class Song:
             unknown = sorted(set(s.play) - set(names))
             if unknown:
                 raise ValueError(f"section {s.name!r} plays unknown tracks: {unknown}")
+        for t in self.tracks:
+            if t.duck is None:
+                continue
+            if t.duck.source not in names:
+                raise ValueError(
+                    f"track {t.name!r}: duck.source {t.duck.source!r} not in song")
+            if t.duck.attack <= 0:
+                raise ValueError(f"track {t.name!r}: duck.attack must be positive")
+            if t.duck.release <= 0:
+                raise ValueError(f"track {t.name!r}: duck.release must be positive")
+            if t.duck.depth_db >= 0:
+                raise ValueError(f"track {t.name!r}: duck.depth_db must be negative")
 
     def track(self, name: str) -> Track:
         for t in self.tracks:
