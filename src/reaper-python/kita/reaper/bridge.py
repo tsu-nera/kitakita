@@ -36,12 +36,6 @@ def _scale_to(mode: int, value: float) -> float:
     return float(RPR.ScaleToEnvelopeMode(mode, value))
 
 
-@lru_cache(maxsize=None)
-def _scale_from(mode: int, value: float) -> float:
-    """ScaleFromEnvelopeMode(mode, value) のメモ化ラッパ。_scale_to 参照。"""
-    return float(RPR.ScaleFromEnvelopeMode(mode, value))
-
-
 def norm(p: str | os.PathLike) -> str:
     return os.path.normcase(os.path.normpath(str(p)))
 
@@ -195,15 +189,18 @@ def envelope_points(env) -> list[tuple[float, float]]:
     """(time, gain_linear) の列。chunk 内の PT 行は時間順に格納されている
     (書き込み時に Envelope_SortPoints を呼んでいるため)。
 
-    格納値は envelope の scaling mode 依存なので linear gain へ戻して返す
-    (set_envelope_points と対の変換。呼び出し側は linear 前提)。
+    **chunk の PT 値は既に linear gain**であり、scaling 変換をしてはいけない。
+    GetEnvelopePoint が返す「格納値」とはドメインが違う点に注意:
+
+        chunk PT       : 0.05623413   <- linear (= 10^(-25.0/20))
+        GetEnvelopePoint: 301.82      <- fader-scaling(mode=1) ドメイン
+
+    ここに ScaleFromEnvelopeMode を掛けると二重変換になり、値が 0 付近へ潰れて
+    毎回 DRIFT 扱い=全点の再書き込みが走る。書き込み側(set_envelope_points)は
+    InsertEnvelopePoint が scaling ドメインを要求するため変換が要る — 読みと
+    書きで非対称であることが REAPER 側の仕様。
     """
-    mode = int(RPR.GetEnvelopeScalingMode(env))
-    chunk = _envelope_chunk(env)
-    return [
-        (t, _scale_from(mode, v))
-        for t, v in _parse_toplevel_pt_lines(chunk)
-    ]
+    return _parse_toplevel_pt_lines(_envelope_chunk(env))
 
 
 def set_envelope_points(env, points: list[tuple[float, float]]) -> None:
