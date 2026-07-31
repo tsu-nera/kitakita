@@ -6,6 +6,7 @@ reconcile と status は「サンプラは在るか」「リージョンはど�
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 
 from reapy import reascript_api as RPR
 
@@ -13,6 +14,32 @@ SAMPLER_FX = "ReaSamplomatic5000"
 SYNTH_FX = "ReaSynth"
 FILTER_FX = "filters/resonantlowpass"  # 同梱 JSFX "Resonant Lowpass Filter"
 FILTER_FX_TAG = "resonant lowpass"     # FX 名からの検出タグ
+
+# envelope point 読み出し用のバッファサイズ(GetEnvelopeStateChunk)。
+# 383点で約11KB。フル尺(6分)×複数トラックでも余裕を見て 1MB を確保する。
+_CHUNK_BUFSIZE = 1 << 20
+
+
+@lru_cache(maxsize=None)
+def _scale_to(mode: int, value: float) -> float:
+    """ScaleToEnvelopeMode(mode, value) のメモ化ラッパ。
+
+    (mode, value) だけで決まる純関数(REAPER 側に副作用/内部状態の依存が無い)
+    なのでプロセス内でキャッシュしてよい。duck の点列に現れる gain 値は
+    高々数種類(gain_linear と gain_linear*depth)なので、キャッシュにより
+    RPR 呼び出し回数が点数ではなく「相異なる値の数」になる。
+
+    変換式そのものを Python で再実装しないこと — PR #17 で踏んだ
+    fader-scaling(mode=1)の無音バグと同種の不一致リスクが戻る。REAPER に
+    「聞く」のは変えず、聞く回数だけを削減する。
+    """
+    return float(RPR.ScaleToEnvelopeMode(mode, value))
+
+
+@lru_cache(maxsize=None)
+def _scale_from(mode: int, value: float) -> float:
+    """ScaleFromEnvelopeMode(mode, value) のメモ化ラッパ。_scale_to 参照。"""
+    return float(RPR.ScaleFromEnvelopeMode(mode, value))
 
 
 def norm(p: str | os.PathLike) -> str:
@@ -115,19 +142,68 @@ def ensure_volume_envelope(track):
     return env
 
 
+def _envelope_chunk(env) -> str:
+    """GetEnvelopeStateChunk を 1 コールで取得し、末尾までそろっていることを検証する。
+
+    reapy dist API は 1 コール一律 ~33ms かかるため、点ごとに GetEnvelopePoint
+    を呼ぶと点数に比例して往復コストが積み上がる(Issue #19)。chunk 1コールへ
+    まとめることで点数への依存を消す。
+
+    切り詰め検出は必須。バッファ不足で chunk が途中で切れると PT 行が欠け、
+    「点が足りない」と誤判定されて毎回全点の再書き込みが走る(静かな無限
+    書き直し)。rstrip 後の末尾が ">" でなければ即座に失敗させる。
+    """
+    ret = RPR.GetEnvelopeStateChunk(env, "", _CHUNK_BUFSIZE, False)
+    chunk = ret[2] if isinstance(ret, (tuple, list)) and len(ret) >= 3 else str(ret)
+    stripped = chunk.rstrip()
+    if not stripped.endswith(">"):
+        raise RuntimeError(
+            "envelope chunk looks truncated (buffer size "
+            f"{_CHUNK_BUFSIZE} bytes may be insufficient): "
+            f"{stripped[-80:]!r}"
+        )
+    return chunk
+
+
+def _parse_toplevel_pt_lines(chunk: str) -> list[tuple[float, float]]:
+    """chunk から深さ1(トップレベル)の `PT <pos> <val> ...` 行だけを (pos, val) で返す。
+
+    オートメーションアイテムは `<POOLEDENV ...>` のようなネストブロックとして
+    現れ、その中の PT 行を拾うと誤動作する。ネスト深さは「`<` で始まる行で
+    +1、`>` だけの行で -1」で数えれば十分(現状このプロジェクトはアイテムを
+    作らないが、人間が REAPER 上で作った場合に静かに壊れるのを防ぐ)。
+    """
+    points: list[tuple[float, float]] = []
+    depth = 0
+    for line in chunk.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("<"):
+            depth += 1
+            continue
+        if stripped == ">":
+            depth -= 1
+            continue
+        if depth == 1 and stripped.startswith("PT "):
+            tokens = stripped.split()
+            points.append((float(tokens[1]), float(tokens[2])))
+    return points
+
+
 def envelope_points(env) -> list[tuple[float, float]]:
-    """(time, gain_linear) の列。時間順は CountEnvelopePoints の並び(通常は昇順)。
+    """(time, gain_linear) の列。chunk 内の PT 行は時間順に格納されている
+    (書き込み時に Envelope_SortPoints を呼んでいるため)。
 
     格納値は envelope の scaling mode 依存なので linear gain へ戻して返す
     (set_envelope_points と対の変換。呼び出し側は linear 前提)。
     """
-    mode = RPR.GetEnvelopeScalingMode(env)
-    pts = []
-    for i in range(int(RPR.CountEnvelopePoints(env))):
-        ret = RPR.GetEnvelopePoint(env, i, 0.0, 0.0, 0, 0.0, False)
-        # ret: (retval, envelope, ptidx, timeOut, valueOut, shapeOut, tensionOut, selectedOut)
-        pts.append((float(ret[3]), float(RPR.ScaleFromEnvelopeMode(mode, ret[4]))))
-    return pts
+    mode = int(RPR.GetEnvelopeScalingMode(env))
+    chunk = _envelope_chunk(env)
+    return [
+        (t, _scale_from(mode, v))
+        for t, v in _parse_toplevel_pt_lines(chunk)
+    ]
 
 
 def set_envelope_points(env, points: list[tuple[float, float]]) -> None:
@@ -137,10 +213,10 @@ def set_envelope_points(env, points: list[tuple[float, float]]) -> None:
     REAPER が ScaleFromEnvelopeMode で解釈し直し、実効ゲインが無音付近まで沈む。
     ScaleToEnvelopeMode で envelope の scaling domain へ変換してから格納する。
     """
-    mode = RPR.GetEnvelopeScalingMode(env)
+    mode = int(RPR.GetEnvelopeScalingMode(env))
     RPR.DeleteEnvelopePointRange(env, -1e9, 1e9)
     for t, v in points:
-        RPR.InsertEnvelopePoint(env, t, RPR.ScaleToEnvelopeMode(mode, v),
+        RPR.InsertEnvelopePoint(env, t, _scale_to(mode, v),
                                 0, 0.0, False, True)
     RPR.Envelope_SortPoints(env)
 
