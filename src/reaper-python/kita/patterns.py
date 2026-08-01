@@ -239,12 +239,79 @@ def repeat(phrase: Phrase, n: int) -> Phrase:
     return phrase * n
 
 
+def _shift(deg: Degree, n: int) -> Degree:
+    """度数を n ずらす。休符(None)と ChordTone の相対性を保つ。"""
+    if deg is None:
+        return None
+    if isinstance(deg, ChordTone):
+        return ChordTone(deg.offset + n)
+    return deg + n
+
+
 def transpose(phrase: Phrase, n: int) -> Phrase:
     """度数を n だけずらす(スケール内の平行移動)。休符はそのまま。"""
-    degs = tuple(d if d is None else
-                 ChordTone(d.offset + n) if isinstance(d, ChordTone) else d + n
-                 for d in phrase.degrees)
-    return Phrase(degs, phrase.durations)
+    return Phrase(tuple(_shift(d, n) for d in phrase.degrees), phrase.durations)
+
+
+def octave(phrase: Phrase, n: int = 1) -> Phrase:
+    """n オクターブ上げ下げする(スケール長 = 7度ぶんの平行移動)。"""
+    return transpose(phrase, 7 * n)
+
+
+# --- articulation (#2): 旋律はそのまま、処理だけ差し替える ---------------------
+#
+# 展開の作り方として、セクションごとに別の旋律を置くのではなく「1本の素材へ
+# 別の処理を適用する」形を取る。同じフックが形を変えて戻るので聴き手が覚えられ、
+# 素材 N 本 × 処理 M 種の候補が N+M 個の記述で出せる。
+# 音の長さ(プラッキーか持続か)は clip の gate と Synth.sustain の担当なので、
+# ここでは音程とリズムだけを扱う。
+
+def _grid(phrase: Phrase, step: float) -> list[Degree]:
+    """phrase を step 刻みのグリッドへサンプルし、各スロットで鳴っている度数を返す。
+
+    元が休符の区間は None。音価の途中(タイの内側)も同じ度数で埋まるので、
+    レガートの旋律をゲートで刻み直しても音程の輪郭が保たれる。
+    """
+    slots = round(phrase.beats / step)
+    out: list[Degree] = []
+    for i in range(slots):
+        t = i * step
+        beat = 0.0
+        cur: Degree = None
+        for deg, dur in zip(phrase.degrees, phrase.durations):
+            if beat - 1e-9 <= t < beat + dur - 1e-9:
+                cur = deg
+                break
+            beat += dur
+        out.append(cur)
+    return out
+
+
+def gated(phrase: Phrase, pattern: str, step: float = 0.25) -> Phrase:
+    """旋律を pattern のゲートで刻み直す(トランスゲート)。音程は保持する。
+
+    pattern は rhythm() と同じ表記('.'=休符)で、phrase 全体にループして掛かる。
+    元が休符のスロットは pattern が発音でも鳴らさない(旋律の休符が優先)。
+    """
+    seq = [c for c in pattern if not c.isspace()]
+    grid = _grid(phrase, step)
+    degs = [d if seq[i % len(seq)] != "." else None for i, d in enumerate(grid)]
+    return Phrase(tuple(degs), (step,) * len(degs))
+
+
+def arped(phrase: Phrase, shape: tuple[int, ...] = (0, 2, 4),
+          step: float = 0.25) -> Phrase:
+    """各音を shape(度数オフセット)の並びへ展開する(コードトーンのアルペジオ)。
+
+    shape 既定の (0,2,4) は root/3度/5度。旋律の音を基準にするので、和音そのもの
+    ではなく「その音を起点にした上行」になる。休符はその音価ぶん休符のまま。
+    """
+    degs: list[Degree] = []
+    for deg, dur in zip(phrase.degrees, phrase.durations):
+        n = max(1, round(dur / step))
+        for k in range(n):
+            degs.append(None if deg is None else _shift(deg, shape[k % len(shape)]))
+    return Phrase(tuple(degs), (step,) * len(degs))
 
 
 def vary_tail(phrase: Phrase, tail: Phrase) -> Phrase:
