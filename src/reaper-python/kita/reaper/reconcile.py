@@ -123,10 +123,13 @@ def _reconcile_synth(track, spec_t: Track) -> str:
                                            1.0 if mix == want else 0.0)
     if "sustain" in params:  # 音源ごとの sustain(lead=1.0持続 / midbass=0.0プラック)
         RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params["sustain"], inst.sustain)
+    if "global detune" in params:  # cent → 正規化。実機確認: 0..1 が -1200..+1200 cent
+        RPR.TrackFX_SetParamNormalized(track.id, fx_idx, params["global detune"],
+                                       0.5 + inst.detune / 2400.0)
 
     fstate = _reconcile_filter(track, inst)
-    return (f"{fxstate} wave={inst.wave} sus={inst.sustain:.1f} {fstate} "
-            f"{_reconcile_volume(track, spec_t)}")
+    return (f"{fxstate} wave={inst.wave} sus={inst.sustain:.1f} "
+            f"det={inst.detune:+.0f}c {fstate} {_reconcile_volume(track, spec_t)}")
 
 
 def _reconcile_filter(track, inst: Synth) -> str:

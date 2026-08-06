@@ -55,6 +55,11 @@ class Synth:
     ReaSynth はフィルタを持たないため、cutoff 指定時に reconcile が JSFX を後段へ
     挿す(トランスの「レゾナンスLPF」担当)。resonance は 0..1。sim は未モデル
     (オフライン計測はフィルタ前の生 saw を測る)。
+    detune はピッチのずれ(cent, ±1200)。ReaSynth "Global detune" に対応し、
+    正規化 0..1 が -1200..+1200 cent に線形対応する(実機で確認)。デチューンした
+    トラックを複数重ねて厚みを作るため(#2 黎明期レイヤー方式)の席。MIDI は
+    ノート番号しか運べないので、この値は reconcile(実機)と sim(オフライン合成)
+    だけが読む — compose の出力は detune で変わらない。
     note は Clip プロトコル (events(bars, note)) を満たすためだけの席で、melodic
     clip は無視する (自前で degree→pitch を解決する)。
     """
@@ -63,6 +68,12 @@ class Synth:
     sustain: float = 1.0
     cutoff: float | None = None
     resonance: float = 0.2
+    detune: float = 0.0  # cent。0=無変化(ReaSynth の正規化 0.5)
+
+    def __post_init__(self):
+        if not -1200 <= self.detune <= 1200:
+            raise ValueError(
+                f"Synth.detune は ±1200 cent の範囲 (got {self.detune})")
 
 
 Instrument = Sampler | Synth

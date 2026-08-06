@@ -85,12 +85,16 @@ def _osc(freq: float, n: int, wave: str) -> np.ndarray:
 
 
 def _render_synth(events: list[Event], wave: str, gain: float,
-                  bpm: float, total_bars: int, sustain: float = 1.0) -> np.ndarray:
+                  bpm: float, total_bars: int, sustain: float = 1.0,
+                  detune: float = 0.0) -> np.ndarray:
     """melody Event 列を wave のオシレータ + ADSR 風エンベロープでオフライン合成。
 
     sustain<1 なら decay で sustain レベルまで落とし、プラック(mid bass の転がり)を
     再現する。実機 ReaSynth と絶対値は一致しないが、他トラックとの相対バランス計測用。
+    detune(cent) は周波数比 2**(cent/1200) として乗じる。デチューンした複数
+    トラックを重ねたときの唸り(=厚みの正体)は、この位相差から sim にも現れる。
     """
+    ratio = 2 ** (detune / 1200.0)
     spb = 60.0 / bpm
     total = int(total_bars * 4 * spb * SR) + SR
     buf = np.zeros(total)
@@ -102,7 +106,7 @@ def _render_synth(events: list[Event], wave: str, gain: float,
         m = e - s
         if m <= 0:
             continue
-        freq = 440.0 * 2 ** ((ev.pitch - 69) / 12.0)
+        freq = 440.0 * 2 ** ((ev.pitch - 69) / 12.0) * ratio
         seg = _osc(freq, m, wave)
         env = np.full(m, float(sustain))  # ADSR: A立上げ→D減衰→S維持→R減衰
         a = min(atk, m)
@@ -136,7 +140,8 @@ def render_track_full(song: Song, track: Track, gain_db: float | None = None) ->
     events = track_events(song, track)
     if isinstance(track.instrument, Synth):
         buf = _render_synth(events, track.instrument.wave, gain, song.bpm,
-                            song.total_bars, track.instrument.sustain)
+                            song.total_bars, track.instrument.sustain,
+                            track.instrument.detune)
     else:
         buf = _render_events(events, load_mono(song.sample_path(track)),
                              gain, song.bpm, song.total_bars)
@@ -155,7 +160,7 @@ def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
     events = track.clip.events(bars, track.instrument.note)
     if isinstance(track.instrument, Synth):
         buf = _render_synth(events, track.instrument.wave, gain, song.bpm, bars,
-                            track.instrument.sustain)
+                            track.instrument.sustain, track.instrument.detune)
     else:
         buf = _render_events(events, load_mono(song.sample_path(track)),
                              gain, song.bpm, bars)

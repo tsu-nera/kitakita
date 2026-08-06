@@ -13,4 +13,25 @@ from kita.model import (  # noqa: F401
     load_song,
     section,
 )
-from kita.patterns import euclid, melody, steps  # noqa: F401
+from kita.patterns import (  # noqa: F401
+    FIFTH,
+    ROOT,
+    SEVENTH,
+    THIRD,
+    ChordTone,
+    Phrase,
+    Progression,
+    arped,
+    euclid,
+    gated,
+    melody,
+    motif,
+    octave,
+    progression,
+    repeat,
+    repeat_vary,
+    rhythm,
+    steps,
+    transpose,
+    vary_tail,
+)
