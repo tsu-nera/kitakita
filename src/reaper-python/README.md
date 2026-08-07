@@ -15,6 +15,7 @@ song.py (正本: Song を構築する宣言的コード)
       patterns.py  Clip ビルダー (steps/euclid/melody)。パターン解釈はここだけが知る
       midi.py      Song → output/*.mid (セクションを連結、1トラック1ファイル)
       sim.py       オフライン合成 + 計測 (check/suggest/render/bands)
+      fx.py        オフライン FX (pedalboard)。リバーブは sim の中で完結する
       cli.py       `uv run kita <cmd>`
       reaper/      reapy で REAPER を冪等制御 (sync/load/transport/proc)
 ```
@@ -41,6 +42,12 @@ uv run kita reaper start|stop|restart|status   # REAPER プロセス制御 (Linu
 
 `compose / check / suggest / render / bands` はオフラインで動く（REAPER 不要）。
 それ以外は REAPER 起動中 + reapy ブリッジが必要。
+
+> **FX（リバーブ）は片側だけ**: `Track(reverb=Reverb(...))` は `kita/fx.py`（pedalboard）が
+> オフライン合成の後段で掛ける。`check` の計測にも `render` の wav にも乗るが、
+> **REAPER には反映されない**（実機は dry で鳴る）。実機に FX を挿すと計測から見えなくなり、
+> 「測れる音」と「作る音」が分岐するため — ADR-001 の synth-first と同じ理由。
+> リバーブが唯一のステレオ源なので、計測はモノラルのまま `render` の wav だけステレオ。
 
 > **サンプルについて**: `song.py` の `SAMPLES`（sample_root）配下の wav を参照する。
 > 無い環境では `uv run python samples/gen_kick.py` で合成キックを生成し

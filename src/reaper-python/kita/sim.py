@@ -12,6 +12,10 @@ Event 列は midi.py と同じ Clip.events() 由来 — パターン解釈の二
 トラック"間"の相対バランスと展開の形を見るのが目的で、絶対値は実機と一致しない。
 一方 ducking(#16) は kita/duck.py の点列を実機(volume envelope)と共有するため、
 サンプル単位で正確に再現される。
+リバーブ(#4)は逆向きで、sim の中だけに存在する — kita/fx.py が pedalboard で
+掛けるので計測にも書き出しにも乗るが、REAPER 側は dry のまま鳴る(fx.py 参照)。
+計測は一貫してモノラル(リバーブ後に左右平均へ畳む)。ステレオのまま出るのは
+kita render の wav だけ。
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
+from kita import fx
 from kita.duck import duck_points_loop, duck_points_song
 from kita.midi import track_events
 from kita.model import Event, Sampler, Song, Synth, Track
@@ -134,7 +139,20 @@ def _apply_duck(buf: np.ndarray, points: list[tuple[float, float]]) -> np.ndarra
     return buf * env
 
 
-def render_track_full(song: Song, track: Track, gain_db: float | None = None) -> np.ndarray:
+def _finish(buf: np.ndarray, track: Track, stereo: bool) -> np.ndarray:
+    """duck 後の mono バッファへ FX を掛け、mono か (2,N) を返す。
+
+    リバーブは唯一のステレオ源なので FX 層は常にステレオで処理し、計測側では
+    M 成分(左右平均)へ畳んで従来の 1D metrics をそのまま使う(#4)。
+    """
+    if track.reverb is None:
+        return fx.to_stereo(buf) if stereo else buf
+    st = fx.apply_reverb(fx.to_stereo(buf), track.reverb)
+    return st if stereo else st.mean(axis=0)
+
+
+def render_track_full(song: Song, track: Track, gain_db: float | None = None,
+                      stereo: bool = False) -> np.ndarray:
     """全セクション通しの1トラック。gain_db で song の音量を上書き可。"""
     gain = 10 ** ((track.gain_db if gain_db is None else gain_db) / 20)
     events = track_events(song, track)
@@ -147,11 +165,12 @@ def render_track_full(song: Song, track: Track, gain_db: float | None = None) ->
                              gain, song.bpm, song.total_bars)
     if track.duck is not None:
         buf = _apply_duck(buf, duck_points_song(song, track))
-    return buf
+    return _finish(buf, track, stereo)
 
 
 def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
-                     gain_db: float | None = None) -> np.ndarray:
+                     gain_db: float | None = None,
+                     stereo: bool = False) -> np.ndarray:
     """デフォルト clip の bars 小節ループ。バランス計測用(セクションの無音に汚されない)。
 
     duck は必ずこの bars 長の点列(duck_points_loop)を使う — 全曲の点列を流用しない。
@@ -166,14 +185,16 @@ def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
                              gain, song.bpm, bars)
     if track.duck is not None:
         buf = _apply_duck(buf, duck_points_loop(song, track, bars))
-    return buf
+    return _finish(buf, track, stereo)
 
 
 def _mix(stems: dict[str, np.ndarray]) -> np.ndarray:
-    n = max(len(s) for s in stems.values())
-    mix = np.zeros(n)
+    """mono(1D) でも stereo((2,N)) でも、末尾軸の長さを揃えて加算する。"""
+    shape = next(iter(stems.values())).shape
+    n = max(s.shape[-1] for s in stems.values())
+    mix = np.zeros(shape[:-1] + (n,))
     for s in stems.values():
-        mix[:len(s)] += s
+        mix[..., :s.shape[-1]] += s
     return mix
 
 
@@ -185,8 +206,9 @@ def render_loop_mix(song: Song, vols: dict[str, float] | None = None
     return _mix(stems), stems
 
 
-def render_full_mix(song: Song) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-    stems = {t.name: render_track_full(song, t) for t in song.tracks}
+def render_full_mix(song: Song, stereo: bool = False
+                    ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    stems = {t.name: render_track_full(song, t, stereo=stereo) for t in song.tracks}
     return _mix(stems), stems
 
 
@@ -200,10 +222,27 @@ def peak_db(x: np.ndarray) -> float:
     return 20 * math.log10(float(np.max(np.abs(x))) + 1e-12)
 
 
+def _moving_mean(x: np.ndarray, w: int) -> np.ndarray:
+    """np.convolve(x, ones(w)/w, "same") と同値の移動平均を prefix sum で O(n) に。
+
+    np.convolve は直接畳み込みなので O(n*w) — 窓 0.4s(17640点) × 70秒の素材で
+    1回 14 秒かかり、kita check の実行時間の大半を占めていた。
+
+    w > len(x) のときだけ長さが違う(np.convolve は max(n,w) を返す)が、値の最大は
+    どちらも「全体の総和/w」で一致する — short_term_db は最大値しか見ない。
+    """
+    p = np.concatenate(([0.0], np.cumsum(x)))
+    n = len(x)
+    j = np.arange(n) + (w - 1) // 2          # 'same' の切り出し位置
+    hi = np.minimum(n, j + 1)
+    lo = np.maximum(0, j - w + 1)
+    return (p[hi] - p[lo]) / w
+
+
 def short_term_db(x: np.ndarray, win: float = 0.4) -> float:
     """最も大きい win 秒窓のパワー(短時間ラウドネスの簡易版)。"""
     w = max(1, int(win * SR))
-    power = np.convolve(x ** 2, np.ones(w) / w, "same")
+    power = _moving_mean(x ** 2, w)
     return 10 * math.log10(float(np.max(power)) + 1e-12)
 
 
@@ -305,6 +344,28 @@ def check(song: Song) -> None:
                   f"(Δ{rms_db(with_duck) - rms_db(without):+.1f})  "
                   f"pump {p_off:+.1f} -> {p_on:+.1f} dB (Δ{p_on - p_off:+.1f})")
 
+    reverbed = [t for t in song.tracks if t.reverb is not None]
+    if reverbed:
+        bar_sec = song.bar_to_sec(1)
+        print("\n=== reverb (sim 内で完結。REAPER には反映されない) ===")
+        for t in reverbed:
+            r = t.reverb
+            tail = fx.t60(r)
+            dry = render_clip_loop(song, replace(t, reverb=None))
+            wet = stems[t.name]
+            hpf = "off" if r.hpf is None else f"{r.hpf:.0f}Hz"
+            print(f"  {t.name:6s} room={r.room_size:.2f} damp={r.damping:.2f} "
+                  f"send={r.send_db:+.1f}dB hpf={hpf}  "
+                  f"T60 {tail:.2f}s (={tail / bar_sec:.1f}bar)  "
+                  f"RMS {rms_db(dry):.1f} -> {rms_db(wet):.1f} "
+                  f"(Δ{rms_db(wet) - rms_db(dry):+.1f})  "
+                  f"peak Δ{peak_db(wet) - peak_db(dry):+.1f}dB")
+        # 上の loop mix peak はモノラル(左右平均)基準。リバーブで左右が割れると
+        # 書き出し wav の方が高くなるので、実際に書かれる値をここで出す。
+        st_mix, _ = render_full_mix(song, stereo=True)
+        clip = "CLIP!" if peak_db(st_mix) > 0 else "headroom ok"
+        print(f"  kita render (stereo) の実ピーク: {peak_db(st_mix):.1f} dBFS  {clip}")
+
     bass_tracks = [t.name for t in song.tracks if "bass" in t.name]
     if bass_tracks:
         print("\n=== bass 帯域配分 (自スペクトル内シェア) ===")
@@ -352,18 +413,22 @@ def suggest(song: Song) -> None:
 
 
 def render(song: Song, out: Path) -> None:
-    """全セクション通しのミックスを wav 書き出し(A/B・試聴用)。"""
-    mix, _ = render_full_mix(song)
-    x16 = (np.clip(mix, -1, 1) * 32767).astype("<i2")
+    """全セクション通しのミックスを wav 書き出し(A/B・試聴用)。
+
+    計測(check/suggest)はモノラルだが、書き出しだけはステレオにする — リバーブが
+    唯一のステレオ源で、モノラルへ畳むと空間が消えてしまうため(#4)。
+    """
+    mix, _ = render_full_mix(song, stereo=True)
+    x16 = (np.clip(mix.T, -1, 1) * 32767).astype("<i2")  # (N,2) へ転置=インタリーブ
     out.parent.mkdir(parents=True, exist_ok=True)
     w = wave.open(str(out), "wb")
-    w.setnchannels(1)
+    w.setnchannels(2)
     w.setsampwidth(2)
     w.setframerate(SR)
     w.writeframes(x16.tobytes())
     w.close()
-    print(f"wrote {out}  peak {peak_db(mix):.1f} dBFS  ({len(mix) / SR:.1f}s, "
-          f"{song.total_bars} bars)")
+    print(f"wrote {out}  peak {peak_db(mix):.1f} dBFS  "
+          f"({mix.shape[-1] / SR:.1f}s, {song.total_bars} bars, stereo)")
 
 
 def bands(song: Song, target: str) -> None:
