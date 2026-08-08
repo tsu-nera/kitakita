@@ -13,6 +13,7 @@
 from kita import (
     ROOT,
     Duck,
+    Reverb,
     Sampler,
     Song,
     Synth,
@@ -99,6 +100,11 @@ midbass = Track(
 #   各小節に2拍の持続音があるのが要点で、これが gated / arped を掛ける「地」になる
 #   (刻みの多い素材だと旋律側の刻みと変換が衝突して効かない)。
 #   展開はこの1素材へ変換を適用してブロックを差し替える形で作る。
+#   リバーブ(#4): room0.80 = T60 2.4s ≈ 1.4小節。各小節の2拍持続音が次の小節まで
+#   尾を引く長さで、トランスの「空間」の定番域。send は控えめの -9dB から。
+#   ハイパスは 300Hz(lead は低域をほぼ持たないので実測差は出ないが、音域を下げた
+#   ときに土台を濁さないための保険)。リバーブは Track に付くので、drop で
+#   lead_gated へ差し替えても同じ量が掛かる — 16分の隙間を残響が埋める。
 # -----------------------------------------------------------------------------
 MELODY = repeat_vary(
     motif([4, 3, 4], [1, 1, 2]) + motif([5, 4, 2], [1, 1, 2])     # Am / F
@@ -106,7 +112,8 @@ MELODY = repeat_vary(
     2, motif([2, 0], [1, 2]))
 
 lead = Track("lead", Synth(wave="saw"),
-             PROG.melody(MELODY, octave=4, vel=100, gate=0.9), gain_db=-12.0)
+             PROG.melody(MELODY, octave=4, vel=100, gate=0.9), gain_db=-12.0,
+             reverb=Reverb(room_size=0.80, damping=0.4, send_db=-9.0, hpf=300))
 
 # lead の変奏 (Issue #2)。MELODY 1本へ変換を掛けたものをセクションで差し替える。
 #   arped(root-3度-5度への分解)は不採用 — 和音を駆け上がる走句になってチップチューン風に

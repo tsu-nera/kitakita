@@ -96,6 +96,38 @@ class Duck:
 
 
 @dataclass(frozen=True)
+class Reverb:
+    """オフライン send リバーブ (#4)。実装は kita/fx.py (pedalboard = JUCE Freeverb)。
+
+    REAPER には反映されない — sim(オフライン合成)の中だけで完結する。実機に FX を
+    挿すと kita check から見えなくなり「測れる音」と「作る音」が分岐するため
+    (fx.py 冒頭の理由づけを参照)。実機は dry のまま鳴る。
+
+    room_size が残響長を決め(実測 0.70→T60 1.9s, 0.80→2.4s, 0.95→5.5s)、
+    damping は長さでなく高域の減り方(音色)を決める。send_db は dry と同エネルギーの
+    残響を 0dB とした相対量で、素材に依存しない(fx.py の energy_gain)。
+    hpf は残響へ送る前のハイパス(Hz)。低域を残響へ回すとミックスの土台が濁るので、
+    ベース系に掛けるときは必須。lead(<120Hz が 0.01%)では実測差が出ない。
+    width は 0..1 のステレオ幅。sim の計測はモノラル(左右平均)だが、リバーブは
+    唯一のステレオ源なので kita render の wav だけステレオで書き出す。
+    """
+    room_size: float = 0.8
+    damping: float = 0.4
+    send_db: float = -9.0
+    hpf: float | None = 300.0
+    width: float = 1.0
+
+    def __post_init__(self):
+        for name in ("room_size", "damping", "width"):
+            v = getattr(self, name)
+            if not 0.0 <= v <= 1.0:
+                raise ValueError(f"Reverb.{name} は 0..1 の範囲 (got {v})")
+        if self.send_db > 0:
+            raise ValueError(
+                f"Reverb.send_db は dry 以下 (<=0dB) を想定 (got {self.send_db})")
+
+
+@dataclass(frozen=True)
 class Track:
     name: str
     instrument: Instrument
@@ -103,6 +135,7 @@ class Track:
     gain_db: float = 0.0
     group: str | None = None  # Reaper folder(バス)。同一 group は連続して並べること
     duck: Duck | None = None  # 拍ドリブン ducking(#16)。None なら適用しない
+    reverb: Reverb | None = None  # オフライン send リバーブ(#4)。sim 内で完結
 
     @property
     def gain_linear(self) -> float:
