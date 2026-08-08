@@ -17,7 +17,10 @@ from kita import (
     Song,
     Synth,
     Track,
+    gated,
+    motif,
     progression,
+    repeat_vary,
     rhythm,
     section,
     steps,
@@ -47,11 +50,12 @@ DRUMS = [kick, clap, ohat]
 # -----------------------------------------------------------------------------
 # 調性の唯一の定義 (Issue #2)。キー・スケール・小節ごとのルート度数をここだけに置き、
 # subbass / midbass / lead が共有する。ルートの不一致が構造的に起きず、キーや
-# スケールの変更もこの1行で済む (degree 0=A, 4=E, 5=F, 6=G)。
-# 進行は A→A→F→G = i–i–VI–VII。各 clip では ROOT が「その小節のルート」に解決される。
-# スケールは固定でない — natural minor 等へ差し替えて候補を比べてよい。
+# スケールの変更もこの1行で済む (degree 0=A, 2=C, 5=F, 6=G)。
+# 進行は Am→F→C→G = i–VI–III–VII。各 clip では ROOT が「その小節のルート」に解決される。
+# 当初の A phrygian (i–i–VI–VII) は 2度の Bb が効きすぎてエキゾチックに寄るため不採用。
+# natural minor の i–VI–III–VII は 90年代トランスで最も多い進行。
 # -----------------------------------------------------------------------------
-PROG = progression("A", "phrygian", [0, 0, 5, 6])
+PROG = progression("A", "minor", [0, 5, 2, 6])
 
 # -----------------------------------------------------------------------------
 # sub bass (Issue #13): <80Hz の重量感だけを担う根音。元は RS5k サンプル
@@ -59,8 +63,8 @@ PROG = progression("A", "phrygian", [0, 0, 5, 6])
 #   (doc/adr/001 synth-first)。理由: sim(kita check)はサンプラのピッチを模さないため、
 #   ルート進行を追う音は synth で作れば <80Hz 量・ルート・kick 住み分けを完全検証できる。
 #   転がりは midbass(#12)へ譲り、sub は 1小節1音の pedal(最小限の動き)で根音を支える。
-#   ルートは PROG を共有(A→A→F→G)、octave1 で midbass のちょうど1オクターブ下
-#   (A1=55/F2=87/G2=98Hz)。sustain=1.0 で持続する土台。
+#   ルートは PROG を共有(Am→F→C→G)、octave1 で midbass のちょうど1オクターブ下
+#   (A1=55/F1=44/C2=65/G2=98Hz)。sustain=1.0 で持続する土台。
 #   ducking(#16): kick 拍で -9dB へ沈める beat-locked volume envelope を付け、
 #   kick との加算を切ってから gain_db を -13.0 → -11.0 へ引き上げた(#13 時点の
 #   天井は sidechain 非モデルだったための制約で、ducking 導入で外れた。sub の
@@ -89,24 +93,41 @@ midbass = Track(
 
 # -----------------------------------------------------------------------------
 # lead: トランスリード (Issue #2)。RS5k は C4 固定でメロディ不可のため ReaSynth(saw)。
-#   degrees は PROG のスケール度数 (0=A, 1=Bb, 2=C, 3=D, 4=E, 5=F, 7=A の1オクターブ上)。
-#   durations は各音の拍数(合計32拍=8小節で1フレーズ)。
-#   ここは #11 時点の「長めの音価のレガート単音」のまま。Phase 2 で
-#   モチーフ反復 + 末尾変奏(repeat_vary)と 16分ゲート(rhythm)へ書き換える。
-#   音色(resonant LPF / デチューンレイヤー)も Phase 2。
+#   degrees は PROG のスケール度数 (0=A, 2=C, 3=D, 4=E, 5=F, 6=G, 7=A の1オクターブ上)。
+#   旋律 MELODY は 4小節 = 「各小節で動いて2拍伸ばす」形。跳躍は bar3 の E→A だけで、
+#   残りは順次進行。repeat_vary で 8小節にし、最後の小節だけ末尾を C→A へ変えて閉じる。
+#   各小節に2拍の持続音があるのが要点で、これが gated / arped を掛ける「地」になる
+#   (刻みの多い素材だと旋律側の刻みと変換が衝突して効かない)。
+#   展開はこの1素材へ変換を適用してブロックを差し替える形で作る。
 # -----------------------------------------------------------------------------
-lead = Track("lead", Synth(wave="saw"), PROG.melody(
-    [0, 1, 2, 3, 2, 1, 0, 4, 3, 1, 0,  0, 1, 2, 5, 4, 3, 4, 2, 1, 0],
-    [2, 1, 1, 2, 1, 1, 2, 2, 2, 1, 1,  2, 1, 1, 2, 1, 1, 2, 2, 2, 2],
-    octave=4, vel=100, gate=0.9,
-), gain_db=-12.0)
+MELODY = repeat_vary(
+    motif([4, 3, 4], [1, 1, 2]) + motif([5, 4, 2], [1, 1, 2])     # Am / F
+    + motif([4, 7, 6], [1, 1, 2]) + motif([6, 4, 3], [1, 1, 2]),  # C  / G
+    2, motif([2, 0], [1, 2]))
+
+lead = Track("lead", Synth(wave="saw"),
+             PROG.melody(MELODY, octave=4, vel=100, gate=0.9), gain_db=-12.0)
+
+# lead の変奏 (Issue #2)。MELODY 1本へ変換を掛けたものをセクションで差し替える。
+#   arped(root-3度-5度への分解)は不採用 — 和音を駆け上がる走句になってチップチューン風に
+#   寄り、トランスらしさが消える。gated は音程を動かさず時間軸だけを刻むので、和声が
+#   静止したまま推進力だけが増える。
+#   gate を 0.9 → 0.7 に下げるのは、16分に刻むと音価が短く隣と詰まるため。
+GATE16 = "x.xx x.xx x.xx x.xx"
+lead_gated = PROG.melody(gated(MELODY, GATE16), octave=4, vel=100, gate=0.7)
 
 CORE = DRUMS + [subbass, midbass, lead]
 
-# 展開 (Issue #5, #2, #12): コアループ → drums を抜いた 8小節 breakdown
-#   (sub + midbass + lead が主役) → コアループ。lead は全区間で鳴らし続ける。
+# 展開 (Issue #5, #2, #12): トランスの定石 core → breakdown → build → drop。
+#   drums の抜き差しと lead の articulation を別々に動かし、drop で初めて両方が揃う。
+#     core_a    full,  lead=plain   旋律の提示
+#     breakdown drums 抜き, plain   旋律だけを聴かせる
+#     build     kick+clap 復帰, plain  ohat はまだ入れず「戻りきっていない」感を残す
+#     drop      full,  lead=gated   ohat が戻り lead が16分ゲートへ = 唯一の全部入り
+#   lead は全区間 MELODY 1本で、変わるのは articulation だけ。
 song = Song(bpm=138, sample_root=SAMPLES, tracks=CORE, sections=[
     section("core_a", 16, CORE),
     section("breakdown", 8, [subbass, midbass, lead]),
-    section("core_b", 16, CORE),
+    section("build", 8, [kick, clap, subbass, midbass, lead]),
+    section("drop", 8, CORE, override={lead: lead_gated}),
 ])
