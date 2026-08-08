@@ -34,6 +34,15 @@ from kita import (
 SAMPLES = "/mnt/shared/DTM/Samples/Black Octopus/Trance Vision"
 
 # -----------------------------------------------------------------------------
+# gain_db は全トラック一律で -1.6dB トリム済み(相対バランスは不変)。
+#   デチューン3層は唸りの山で位相が揃い、そこだけ瞬間的にピークが立つ。lead の
+#   変奏を plain と同じエネルギーへ埋め戻したところ drop2 が +1.08dBFS まで振れた
+#   (18サンプル clip)。lead だけ下げてもピークは素直に落ちない(2dB 下げて 0.87dB)
+#   ため、ミックス全体の頭を下げた。master trim ではなく各トラックの gain_db を
+#   動かすのは、track volume なら kita sync が REAPER へ反映でき sim と乖離しないため。
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # オーソドックスなトランス・ドラム (16分グリッド):
 #   step:  1 e & a 2 e & a 3 e & a 4 e & a
 #   kick   x . . . x . . . x . . . x . . .   4つ打ち
@@ -42,11 +51,11 @@ SAMPLES = "/mnt/shared/DTM/Samples/Black Octopus/Trance Vision"
 # -----------------------------------------------------------------------------
 
 kick = Track("kick", Sampler("Drum - Kick - One Shots/DPT_Kick_One_Shot_Acidtech.wav"),
-             steps("x...x...x...x...", vel=120), gain_db=-8.0, group="drums")
+             steps("x...x...x...x...", vel=120), gain_db=-9.6, group="drums")
 clap = Track("clap", Sampler("Drum - Clap - One Shots/DPT_Clap_One_Shot_Sola.wav"),
-             steps("....x.......x...", vel=105), gain_db=-10.8, group="drums")
+             steps("....x.......x...", vel=105), gain_db=-12.4, group="drums")
 ohat = Track("ohat", Sampler("Drum - Hat Open - One Shot/DPT_Hat_Open_One_Shot_Azureshort.wav"),
-             steps("..x...x...x...x.", vel=95), gain_db=-12.0, group="drums")
+             steps("..x...x...x...x.", vel=95), gain_db=-13.6, group="drums")
 DRUMS = [kick, clap, ohat]
 
 # -----------------------------------------------------------------------------
@@ -75,7 +84,7 @@ PROG = progression("A", "minor", [0, 5, 2, 6])
 subbass = Track("subbass", Synth(wave="sine", sustain=1.0), PROG.melody(
     [ROOT], [4],             # 1小節1音の pedal。ROOT は小節ごとに進行を追う
     octave=1, vel=100, gate=0.92,
-), gain_db=-11.0, duck=Duck("kick", depth_db=-14.0, attack=0.01, release=0.30))
+), gain_db=-12.6, duck=Duck("kick", depth_db=-14.0, attack=0.01, release=0.30))
 
 # -----------------------------------------------------------------------------
 # mid bass (Issue #12): 中域(250–800Hz)の「転がるベース」を ReaSynth(saw) で新設。
@@ -91,7 +100,7 @@ midbass = Track(
     "midbass",
     Synth(wave="saw", sustain=0.0, cutoff=1000, resonance=0.35),
     PROG.melody(rhythm(".xxx .xxx .xxx .xxx"), octave=2, vel=100, gate=0.55),
-    gain_db=-7.0, duck=Duck("kick", depth_db=-14.0, attack=0.01, release=0.30))
+    gain_db=-8.6, duck=Duck("kick", depth_db=-14.0, attack=0.01, release=0.30))
 
 # -----------------------------------------------------------------------------
 # lead: トランスリード (Issue #2)。RS5k は C4 固定でメロディ不可のため ReaSynth(saw)。
@@ -119,10 +128,10 @@ LEAD_REVERB = Reverb(room_size=0.80, damping=0.4, send_db=-9.0, hpf=300)
 #   「太い壁」は同じ旋律を cent 単位でずらしたトラックの重ねで作る(#2 の黎明期方式 —
 #   JP-8000 以前のトランスも実際こうやって作られていた)。
 #   ±14cent は A4(440Hz) で約 3.5Hz の唸り。速すぎると濁り、遅すぎると 1本に聞こえる。
-#   3本の合計エネルギーが上がるぶん各層の gain を下げ、lead 全体の RMS を単層時
-#   (-19.5 dBFS)へ揃える。値は kita check で実測して決めた。
+#   3本の合計エネルギーが上がるぶん各層の gain を下げ、lead 全体の RMS を単層時へ
+#   揃える。値は kita check で実測して決めた(全体トリム後で -20.7 dBFS)。
 DETUNE_CENTS = (0.0, -14.0, +14.0)
-LEAD_LAYER_GAIN = -17.0
+LEAD_LAYER_GAIN = -18.6
 
 
 def lead_layer(name: str, detune: float) -> Track:
@@ -138,11 +147,16 @@ lead = LEADS[0]
 #   arped(root-3度-5度への分解)は不採用 — 和音を駆け上がる走句になってチップチューン風に
 #   寄り、トランスらしさが消える。gated は音程を動かさず時間軸だけを刻むので、和声が
 #   静止したまま推進力だけが増える。
-#   gate を 0.9 → 0.7 に下げるのは、16分に刻むと音価が短く隣と詰まるため。
 #   デチューン3層すべてに同じ変奏を掛ける(層ごとに articulation が違うと厚みでなく
 #   別パートに聞こえる)。
+#   vel/gate は「変奏で落ちるエネルギーを埋め戻す」ために決まる。ゲートは音を間引き、
+#   arped は音価を刻むので、plain と同じ vel/gate のままだと曲の山である drop/drop2 で
+#   lead が一番小さくなる(トリム前の実測: plain -19.1 に対し gated -21.7 /
+#   arped -22.5 dBFS)。vel と gate を上げて plain へ揃える。gate をこれ以上上げると
+#   16分スロットが隙間なく鳴ってトランスゲートの「切れ」が薄れるため、
+#   不足ぶんは vel(上限127)で埋める。
 GATE16 = "x.xx x.xx x.xx x.xx"
-lead_gated = PROG.melody(gated(MELODY, GATE16), octave=4, vel=100, gate=0.7)
+lead_gated = PROG.melody(gated(MELODY, GATE16), octave=4, vel=127, gate=0.8)
 LEAD_GATED_OVERRIDE = {t: lead_gated for t in LEADS}
 
 # drop2 のアルペジオ (Issue #2)。gated の「音程は動かず時間だけ刻む」に対して、
@@ -152,11 +166,10 @@ LEAD_GATED_OVERRIDE = {t: lead_gated for t in LEADS}
 #   ずれ続け、スケールを駆け上がる走句=チップチューン風に聞こえる(#2 で却下した形)。
 #   4音なら1拍で1周し、各拍頭が必ず旋律音そのものに戻るので、旋律が保たれたまま
 #   分散和音の装飾になる。7=オクターブ上で、トランスのアルペジオらしい開きが出る。
-#   gate は 0.6 — 16分が隣と詰まらないよう gated(0.7)よりさらに短く切る。
-#   vel は 100 でなく 92 — 音数が増えて重なりが濃くなり、書き出しの実ピークが
-#   +0.16dBFS(1サンプル)超えたため。アルペジオは装飾なので一段下げる方が自然。
+#   vel/gate は gated と同じ理由で「埋め戻し」の値(上のコメント参照)。arped は
+#   音価が最も短く落ち込みも最大(-22.5 dBFS)なので、vel は上限まで使う。
 lead_arped = PROG.melody(arped(MELODY, shape=(0, 2, 4, 7)),
-                         octave=4, vel=92, gate=0.6)
+                         octave=4, vel=127, gate=0.7)
 LEAD_ARPED_OVERRIDE = {t: lead_arped for t in LEADS}
 
 CORE = DRUMS + [subbass, midbass] + LEADS
