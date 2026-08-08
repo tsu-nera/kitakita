@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from kita.model import BEATS_PER_BAR, Event
+from kita.model import BEATS_PER_BAR, Clip, Event
 
 GATE = 0.9  # ノート長 = step * GATE
 
@@ -101,6 +101,10 @@ ROOT = ChordTone(0)
 THIRD = ChordTone(2)
 FIFTH = ChordTone(4)
 SEVENTH = ChordTone(6)
+
+# 和音の既定 voicing (Progression.chords)。度数ベースなのでスケールに追従する。
+TRIAD = (ROOT, THIRD, FIFTH)
+SEVENTH_CHORD = (ROOT, THIRD, FIFTH, SEVENTH)
 
 # degrees に置けるもの: 絶対度数 / 休符 / 進行相対の度数
 Degree = int | None | ChordTone
@@ -327,6 +331,31 @@ def repeat_vary(phrase: Phrase, n: int, tail: Phrase) -> Phrase:
     return repeat(phrase, n - 1) + vary_tail(phrase, tail)
 
 
+# --- polyphony (#3) -----------------------------------------------------------
+
+@dataclass(frozen=True)
+class StackClip:
+    """複数の clip を同時に鳴らす(和音 = ポリフォニー)。
+
+    MelodyClip は単声(度数を順に鳴らすだけ)なので、パッドのように複数の声部が
+    同時に鳴るものは表現できない。ここで events をマージするだけで済むのは、
+    midi が同時 note_on を素直に書け、sim がトラックのバッファを加算するため
+    — 下流(midi/sim/reconcile)は無改造で和音を通せる。
+    """
+    clips: tuple[Clip, ...]
+
+    def events(self, bars: int, note: int) -> list[Event]:
+        evs = [e for c in self.clips for e in c.events(bars, note)]
+        return sorted(evs, key=lambda e: (e.beat, e.pitch))
+
+
+def stack(*clips: Clip) -> StackClip:
+    """clip を重ねて同時発音にする。"""
+    if not clips:
+        raise ValueError("stack: clip が空")
+    return StackClip(tuple(clips))
+
+
 # --- progression (#2) ---------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -347,6 +376,51 @@ class Progression:
         degs, durs = _pair(degrees, durations)
         return MelodyClip(self.root, self.scale, degs, durs,
                           octave, vel, gate, roots=self.roots)
+
+    def chords(self, phrase: Phrase, voicing: tuple[ChordTone, ...] = TRIAD,
+               octave: int = 3, vel: int = 100, gate: float = 0.98,
+               fold: bool = True) -> StackClip:
+        """進行を和音として鳴らす(パッド #3)。phrase はリズムの骨格。
+
+        phrase の各音を voicing のぶんだけ複製し、その小節のルートから数えた
+        和音構成音へ解決して重ねる。phrase は進行の全長(len(roots) 小節)へ
+        展開されるので、`motif([ROOT], [4])` なら全音符パッド、
+        `rhythm("x..x ..x.")` なら同じ和音のリズム刻みになる。
+
+        fold=True は各声部を base オクターブ内(度数 0..scale長-1)へ畳む。
+        root position のままだと F4-A4-C5 のように和音が上へ流れて lead の
+        音域へ突き刺さるが、畳むと自動的に転回形になり、上端が固定されて
+        声部進行も滑らかになる (Am:A-C-E → F:A-C-F → C:C-E-G → G:B-D-G)。
+        """
+        n_scale = len(SCALES[self.scale])
+        total = len(self.roots) * BEATS_PER_BAR
+        reps = round(total / phrase.beats)
+        if abs(reps * phrase.beats - total) > 1e-9:
+            raise ValueError(
+                f"chords: phrase({phrase.beats}拍)が進行の全長({total}拍)を"
+                f"割り切れない — 小節数の約数になる長さにすること")
+        full = phrase * reps
+        voices = []
+        for tone in voicing:
+            degs: list[Degree] = []
+            beat = 0.0
+            for deg, dur in zip(full.degrees, full.durations):
+                degs.append(self._voice(deg, tone, beat, n_scale, fold))
+                beat += dur
+            voices.append(MelodyClip(self.root, self.scale, tuple(degs),
+                                     full.durations, octave, vel, gate))
+        return StackClip(tuple(voices))
+
+    def _voice(self, deg: Degree, tone: ChordTone, beat: float,
+               n_scale: int, fold: bool) -> Degree:
+        """1音を1声部ぶんずらして絶対度数へ解決する(休符はそのまま)。"""
+        if deg is None:
+            return None
+        shifted = _shift(deg, tone.offset)
+        if isinstance(shifted, ChordTone):  # その音が始まる小節のルートを引く
+            bar = int(beat // BEATS_PER_BAR)
+            shifted = self.roots[bar % len(self.roots)] + shifted.offset
+        return shifted % n_scale if fold else shifted
 
 
 def progression(root: str, scale: str, roots: list[int]) -> Progression:
