@@ -186,7 +186,7 @@ LEAD_ARPED_OVERRIDE = {t: lead_arped for t in LEADS}
 #   bass(-14dB)より浅く沈める(パッドは深く沈めると穴が空く)。
 #   gain は kita check で比較して素の -20.0 を採り、全体トリム -1.6dB を足して
 #   -21.6 にしてある(#2 のトリムは全トラック一律なので pads も従う)。素で -17 だと
-#   breakdown が core_a と並んでドラムを抜いた意味が消え、-20 なら落差が残る。
+#   breakdown が main と並んでドラムを抜いた意味が消え、-20 なら落差が残る。
 #   ただし sim は LPF を模さないので実機ではこれより暗く小さく鳴る
 #   (耳で数dB持ち上げる余地がある)。
 #   遅いアタックは Synth に席が無い(かつ sim の attack は 5ms 固定)ため、
@@ -196,12 +196,17 @@ pads = Track("pads", Synth(wave="saw", sustain=1.0, cutoff=800, resonance=0.1),
              PROG.chords(motif([ROOT], [4]), octave=3, vel=90),
              gain_db=-21.6, duck=Duck("kick", depth_db=-6.0, attack=0.01, release=0.25))
 
-CORE = DRUMS + [subbass, midbass] + LEADS
-ALL = CORE + [pads]
+NO_PADS = DRUMS + [subbass, midbass] + LEADS
+FULL = NO_PADS + [pads]
 
-# 展開 (Issue #5, #2, #12, #3): トランスの定石 core → breakdown → build → drop。
+# 展開 (Issue #5, #2, #12, #3): トランスの定石 intro → main → breakdown → build → drop → outro。
 #   drums の抜き差しと lead の articulation を別々に動かし、drop で初めて両方が揃う。
-#     core_a    full,  lead=plain   旋律の提示。pads はまだ入れない
+#   セクション名はトランス慣用の役割名(intro/main/breakdown/build/drop/outro)。
+#   変奏は数字サフィックス(drop2)。名前は発話 → `kita play/loop` → REAPER リージョンを
+#   貫くアドレスなので一意にする。
+#     intro     kick+ohat+subbass          最小構成の入り。lead は「聴いて判断」枠
+#               のため今回は入れない(#5 スコープ1)
+#     main      full - pads, lead=plain    旋律の提示。pads はまだ入れない
 #     breakdown drums+midbass 抜き, plain   pads が入る。抜けた穴を和音が埋める
 #       midbass を抜くのは「拍がずれて聞こえる」実測への対処。midbass は各拍
 #       [休符,16分×3] で拍頭に音を1つも持たず(実測: 拍頭の音 0/96)、kick が
@@ -211,13 +216,19 @@ ALL = CORE + [pads]
 #     build     kick+clap 復帰, plain  ohat はまだ入れず「戻りきっていない」感を残す
 #     drop      full,  lead=gated   ohat が戻り lead が16分ゲートへ
 #     drop2     full,  lead=arped   同じ16分のまま音程が動き出す = 最後の一段
+#     outro     kick+ohat+subbass+pads     設計上は drop2 から要素を逆順に抜く
+#               「引き算」だが、1セクション=1トラックセットの現行モデルでは段階的な
+#               引き算を1ブロックで表現できない。intro の鏡像(kick+ohat+subbass)に
+#               pads を足した構成を1ブロックで置く
 #   lead は全区間 MELODY 1本で、変わるのは articulation だけ。
-#   pads は breakdown で入って以降そのまま。入りが breakdown の合図になり、
-#   drums が戻ってからは和声の糊として残る。
-song = Song(bpm=138, sample_root=SAMPLES, tracks=ALL, sections=[
-    section("core_a", 16, CORE),
+#   pads は breakdown で入って以降そのまま(outro にも残す)。入りが breakdown の
+#   合図になり、drums が戻ってからは和声の糊として残る。
+song = Song(bpm=138, sample_root=SAMPLES, tracks=FULL, sections=[
+    section("intro", 8, [kick, ohat, subbass]),
+    section("main", 16, NO_PADS),
     section("breakdown", 8, [subbass] + LEADS + [pads]),
     section("build", 8, [kick, clap, subbass, midbass] + LEADS + [pads]),
-    section("drop", 8, ALL, override=LEAD_GATED_OVERRIDE),
-    section("drop2", 8, ALL, override=LEAD_ARPED_OVERRIDE),
+    section("drop", 8, FULL, override=LEAD_GATED_OVERRIDE),
+    section("drop2", 8, FULL, override=LEAD_ARPED_OVERRIDE),
+    section("outro", 8, [kick, ohat, subbass, pads]),
 ])

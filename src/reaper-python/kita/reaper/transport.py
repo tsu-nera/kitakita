@@ -7,11 +7,24 @@ from reapy import reascript_api as RPR
 from kita.model import Song
 
 
-def play() -> None:
+def _section_bounds(song: Song, name: str) -> tuple[int, int]:
+    """セクション名から (start_bar, end_bar) を引く。見つからなければ SystemExit。"""
+    for sec, b0, b1 in song.section_bounds():
+        if sec.name == name:
+            return b0, b1
+    names = [s.name for s in song.effective_sections]
+    raise SystemExit(f"no such section: {name} (sections: {names})")
+
+
+def play(song: Song, section: str | None = None) -> None:
     p = reapy.Project()
-    RPR.SetEditCurPos(0, False, False)
+    if section is None:
+        RPR.SetEditCurPos(0, False, False)
+    else:
+        b0, _ = _section_bounds(song, section)
+        RPR.SetEditCurPos(song.bar_to_sec(b0), True, False)
     p.play()
-    print("playing")
+    print("playing" if section is None else f"playing (section {section})")
 
 
 def stop() -> None:
@@ -50,13 +63,10 @@ def loop(song: Song, arg: str) -> None:
     try:
         beats = float(arg)
     except ValueError:
-        for sec, b0, b1 in song.section_bounds():
-            if sec.name == arg:
-                loop_range(song.bar_to_sec(b0), song.bar_to_sec(b1),
-                           f"(section {arg}: bars {b0}-{b1})")
-                return
-        names = [s.name for s in song.effective_sections]
-        raise SystemExit(f"no such section: {arg} (sections: {names})")
+        b0, b1 = _section_bounds(song, arg)
+        loop_range(song.bar_to_sec(b0), song.bar_to_sec(b1),
+                   f"(section {arg}: bars {b0}-{b1})")
+        return
     loop_range(0.0, beats * 60.0 / song.bpm, f"({beats} beats @ {song.bpm} bpm)")
 
 
