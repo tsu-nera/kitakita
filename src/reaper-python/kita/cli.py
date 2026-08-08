@@ -21,7 +21,8 @@ def main() -> None:
     p_sync = sub.add_parser("sync", help="トラック/バス/BPM/リージョンを冪等反映")
     p_sync.add_argument("--dry", action="store_true")
     sub.add_parser("load", help="output/*.mid を各トラックへ")
-    sub.add_parser("play")
+    p_play = sub.add_parser("play", help="再生: 省略時は先頭から、指定時はセクション頭から通し再生")
+    p_play.add_argument("section", nargs="?", help="セクション名(省略時は先頭から)")
     sub.add_parser("stop")
     sub.add_parser("panic", help="all notes off")
     p_bpm = sub.add_parser("bpm")
@@ -58,7 +59,7 @@ def main() -> None:
         _load.load(song)
     elif args.cmd == "play":
         from kita.reaper import transport
-        transport.play()
+        transport.play(song, args.section)
     elif args.cmd == "stop":
         from kita.reaper import transport
         transport.stop()
