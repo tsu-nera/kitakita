@@ -12,7 +12,7 @@ pure Python + REAPER でトランスを作るワークフロー（Issue #6）。
 song.py (正本: Song を構築する宣言的コード)
   └─ kita/
       model.py     Song/Section/Track/Sampler/Synth/Event — 安定インターフェース
-      patterns.py  Clip ビルダー (steps/euclid/melody)。パターン解釈はここだけが知る
+      patterns.py  Clip ビルダー (steps/euclid/melody/chords)。パターン解釈はここだけが知る
       midi.py      Song → output/*.mid (セクションを連結、1トラック1ファイル)
       sim.py       オフライン合成 + 計測 (check/suggest/render/bands)
       fx.py        オフライン FX (pedalboard)。リバーブは sim の中で完結する
