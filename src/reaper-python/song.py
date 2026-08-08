@@ -18,6 +18,7 @@ from kita import (
     Song,
     Synth,
     Track,
+    arped,
     gated,
     motif,
     progression,
@@ -111,30 +112,72 @@ MELODY = repeat_vary(
     + motif([4, 7, 6], [1, 1, 2]) + motif([6, 4, 3], [1, 1, 2]),  # C  / G
     2, motif([2, 0], [1, 2]))
 
-lead = Track("lead", Synth(wave="saw"),
-             PROG.melody(MELODY, octave=4, vel=100, gate=0.9), gain_db=-12.0,
-             reverb=Reverb(room_size=0.80, damping=0.4, send_db=-9.0, hpf=300))
+LEAD_CLIP = PROG.melody(MELODY, octave=4, vel=100, gate=0.9)
+LEAD_REVERB = Reverb(room_size=0.80, damping=0.4, send_db=-9.0, hpf=300)
+
+# デチューンレイヤー (Issue #2)。ReaSynth は unison/detune を持たないので、supersaw の
+#   「太い壁」は同じ旋律を cent 単位でずらしたトラックの重ねで作る(#2 の黎明期方式 —
+#   JP-8000 以前のトランスも実際こうやって作られていた)。
+#   ±14cent は A4(440Hz) で約 3.5Hz の唸り。速すぎると濁り、遅すぎると 1本に聞こえる。
+#   3本の合計エネルギーが上がるぶん各層の gain を下げ、lead 全体の RMS を単層時
+#   (-19.5 dBFS)へ揃える。値は kita check で実測して決めた。
+DETUNE_CENTS = (0.0, -14.0, +14.0)
+LEAD_LAYER_GAIN = -17.0
+
+
+def lead_layer(name: str, detune: float) -> Track:
+    return Track(name, Synth(wave="saw", detune=detune), LEAD_CLIP,
+                 gain_db=LEAD_LAYER_GAIN, group="lead", reverb=LEAD_REVERB)
+
+
+LEADS = [lead_layer(n, c) for n, c in
+         zip(("lead", "lead_dn", "lead_up"), DETUNE_CENTS)]
+lead = LEADS[0]
 
 # lead の変奏 (Issue #2)。MELODY 1本へ変換を掛けたものをセクションで差し替える。
 #   arped(root-3度-5度への分解)は不採用 — 和音を駆け上がる走句になってチップチューン風に
 #   寄り、トランスらしさが消える。gated は音程を動かさず時間軸だけを刻むので、和声が
 #   静止したまま推進力だけが増える。
 #   gate を 0.9 → 0.7 に下げるのは、16分に刻むと音価が短く隣と詰まるため。
+#   デチューン3層すべてに同じ変奏を掛ける(層ごとに articulation が違うと厚みでなく
+#   別パートに聞こえる)。
 GATE16 = "x.xx x.xx x.xx x.xx"
 lead_gated = PROG.melody(gated(MELODY, GATE16), octave=4, vel=100, gate=0.7)
+LEAD_GATED_OVERRIDE = {t: lead_gated for t in LEADS}
 
-CORE = DRUMS + [subbass, midbass, lead]
+# drop2 のアルペジオ (Issue #2)。gated の「音程は動かず時間だけ刻む」に対して、
+#   arped は「時間の刻みはそのままで音程が動く」— trance gate の後に置くと、
+#   同じ16分の推進力を保ったまま情報だけが増えるので、最後の一段になる。
+#   shape は既定の (0,2,4) でなく (0,2,4,7)。3音だと16分4つの拍に対して周期が
+#   ずれ続け、スケールを駆け上がる走句=チップチューン風に聞こえる(#2 で却下した形)。
+#   4音なら1拍で1周し、各拍頭が必ず旋律音そのものに戻るので、旋律が保たれたまま
+#   分散和音の装飾になる。7=オクターブ上で、トランスのアルペジオらしい開きが出る。
+#   gate は 0.6 — 16分が隣と詰まらないよう gated(0.7)よりさらに短く切る。
+#   vel は 100 でなく 92 — 音数が増えて重なりが濃くなり、書き出しの実ピークが
+#   +0.16dBFS(1サンプル)超えたため。アルペジオは装飾なので一段下げる方が自然。
+lead_arped = PROG.melody(arped(MELODY, shape=(0, 2, 4, 7)),
+                         octave=4, vel=92, gate=0.6)
+LEAD_ARPED_OVERRIDE = {t: lead_arped for t in LEADS}
+
+CORE = DRUMS + [subbass, midbass] + LEADS
 
 # 展開 (Issue #5, #2, #12): トランスの定石 core → breakdown → build → drop。
 #   drums の抜き差しと lead の articulation を別々に動かし、drop で初めて両方が揃う。
 #     core_a    full,  lead=plain   旋律の提示
-#     breakdown drums 抜き, plain   旋律だけを聴かせる
+#     breakdown drums+midbass 抜き, plain   旋律だけを聴かせる
+#       midbass を抜くのは「拍がずれて聞こえる」実測への対処。midbass は各拍
+#       [休符,16分×3] で拍頭に音を1つも持たず(実測: 拍頭の音 0/96)、kick が
+#       拍を示す前提のパターン。kick が居ない breakdown では duck も点が立たず
+#       (191点→1点, 最小ゲイン 0.20→1.00)、pump による拍の手がかりも消えるため、
+#       3連16分の1つ目が拍頭に聞こえて16分(0.109s)ぶん前へずれて感じる。
 #     build     kick+clap 復帰, plain  ohat はまだ入れず「戻りきっていない」感を残す
-#     drop      full,  lead=gated   ohat が戻り lead が16分ゲートへ = 唯一の全部入り
+#     drop      full,  lead=gated   ohat が戻り lead が16分ゲートへ
+#     drop2     full,  lead=arped   同じ16分のまま音程が動き出す = 最後の一段
 #   lead は全区間 MELODY 1本で、変わるのは articulation だけ。
 song = Song(bpm=138, sample_root=SAMPLES, tracks=CORE, sections=[
     section("core_a", 16, CORE),
-    section("breakdown", 8, [subbass, midbass, lead]),
-    section("build", 8, [kick, clap, subbass, midbass, lead]),
-    section("drop", 8, CORE, override={lead: lead_gated}),
+    section("breakdown", 8, [subbass] + LEADS),
+    section("build", 8, [kick, clap, subbass, midbass] + LEADS),
+    section("drop", 8, CORE, override=LEAD_GATED_OVERRIDE),
+    section("drop2", 8, CORE, override=LEAD_ARPED_OVERRIDE),
 ])
