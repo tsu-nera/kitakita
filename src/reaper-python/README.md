@@ -32,7 +32,8 @@ uv run kita sync           # トラック/バス/RS5k・ReaSynth/BPM/リージ�
 uv run kita load           # output/*.mid を各トラックへ流し込み
 uv run kita check          # 聴かずに計測: バランス + セクション別エネルギーカーブ
 uv run kita loop breakdown # セクション名でループ範囲を設定 (拍数/off も可)
-uv run kita play / stop / panic / bpm 140
+uv run kita play [section] # 省略時は先頭から、セクション名指定時はその頭から通し再生 (ループしない)
+uv run kita stop / panic / bpm 140
 uv run kita status         # 走行中 REAPER と song.py の差分表示
 uv run kita suggest        # 目標バランスへ寄せる gain_db を提案
 uv run kita render out.wav # 全曲オフライン合成 (A/B・試聴用)
