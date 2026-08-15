@@ -65,7 +65,7 @@ uv run kita reaper start|stop|restart|status   # REAPER プロセス制御 (Linu
 |---|---|---|---|
 | LPF (cutoff/resonance) | 未モデル（フィルタ前の生 saw を測る） | JSFX resonant LPF が掛かる | 実機はこれより暗く小さい |
 | ADSR の A/D/R | 5/60/20ms ハードコード（`sim.py`） | ReaSynth 既定（値は未確認） | 一致保証なし。`song.py` から制御できるのは `sustain` だけで、A/D/R は両側とも固定 |
-| サンプラの pitch | 未モデル（`ev.pitch` を無視） | RS5k が MIDI ノートで追従 | 常に原音の帯域を返す。ピッチが役割の音は synth で作る（doc/adr/001） |
+| サンプラの pitch | 未モデル（`ev.pitch` を無視） | RS5k が MIDI ノートで追従 | 常に原音の帯域を返す。ピッチが役割の音は synth で作る（docs/adr/001） |
 | Volume envelope の scaling | 未モデル | 既定 mode=1（fader scaling） | 捕捉不可。この種のバグは実機でしか出ない |
 
 ### B. sim が正で、実機だけが追いついていない → 数値はそのまま正しい
@@ -81,7 +81,7 @@ B を A と同じ「穴」として扱わないこと。
 
 | 探すもの | 場所 |
 |---|---|
-| 方針（不変の決定） | `doc/adr/` |
+| 方針（不変の決定） | `docs/adr/` |
 | 決定の経緯・却下した案 | 各 Issue の「背景」「却下した案」節 |
 | 現在値とその理由 | `song.py` のコメント |
 

@@ -71,7 +71,7 @@ PROG = progression("A", "minor", [0, 5, 2, 6])
 # -----------------------------------------------------------------------------
 # sub bass (Issue #13): <80Hz の重量感だけを担う根音。元は RS5k サンプル
 #   (DPT_..._Rez.wav = 実質 55Hz サイン)だったが、Synth(sine) へ repatriate した
-#   (doc/adr/001 synth-first)。理由: sim(kita check)はサンプラのピッチを模さないため、
+#   (docs/adr/001 synth-first)。理由: sim(kita check)はサンプラのピッチを模さないため、
 #   ルート進行を追う音は synth で作れば <80Hz 量・ルート・kick 住み分けを完全検証できる。
 #   転がりは midbass(#12)へ譲り、sub は 1小節1音の pedal(最小限の動き)で根音を支える。
 #   ルートは PROG を共有(Am→F→C→G)、octave1 で midbass のちょうど1オクターブ下

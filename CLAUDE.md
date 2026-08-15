@@ -40,7 +40,8 @@ grep -r "duck" tmp/strudel/website/src/pages/learn/
 （compose/sync/load/check 等）が MIDI 生成・reapy での REAPER 反映・オフライン計測を行う。
 詳細は `src/reaper-python/README.md`。
 REAPER の関数・API について質問されたら、**Web検索でなくローカルを検索**してください。
-（GUI の操作手順だけはローカルに無いため Web 検索可）
+GUI 操作を尋ねられても、まず reapy / ReaScript API で code-driven 化できないか先に当たる（Issue #8 方針、上位互換）。
+真に GUI しか手段が無い操作だけ、公式ユーザーガイド <https://www.reaper.fm/userguide.php> を必要箇所だけ参照する（全文のローカル整備はしない）。
 
 ### 検索場所（優先度順）
 
@@ -67,12 +68,12 @@ grep -i "RPR_.*Tempo" tmp/reaper/reascripthelp.html
 - `src/reaper-python/` - pure Python + REAPER ワークフロー（song.py 正本 + kita CLI）
 - `tmp/strudel/` - Strudelリポジトリ（ドキュメント参照用、git 非追跡）
 - `tmp/reaper/` - ReaScript API ドキュメント（git 非追跡）
-- `doc/` - プロジェクトドキュメント
+- `docs/` - プロジェクトドキュメント
 
 ## VSCode拡張機能
 
 このプロジェクトは `roipoussiere.tidal-strudel` 拡張機能を使用。
-カスタムビルドの詳細は [doc/VSCODE_STRUDEL.md](doc/VSCODE_STRUDEL.md) を参照。
+カスタムビルドの詳細は [docs/VSCODE_STRUDEL.md](docs/VSCODE_STRUDEL.md) を参照。
 
 ## 利用可能なサンプル
 
