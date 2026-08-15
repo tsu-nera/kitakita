@@ -3,3 +3,10 @@ node_modules/
 dist-vscode/
 *~
 tmp/
+
+# Claude Code の worktree 隔離用コピー (リポジトリ全体の複製が溜まる)
+.claude/worktrees/
+
+# 作業風景の録画 (wf-recorder)。記事用の動画は repo に置かず外部へ上げる
+*.mp4
+*.mkv
