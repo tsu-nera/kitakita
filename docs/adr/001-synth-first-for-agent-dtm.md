@@ -4,6 +4,17 @@
 
 Accepted (2026-07-19)
 
+**Amendment (2026-08-27, ADR-002):** ADR-002 で検証正本を sim 再構成（Path B）から
+REAPER 実レンダの計測（Path A）へ変更した。これにより「sim が再構成できるから
+synth-first」という根拠（本文 Context の「synth は sim が完全再構成でき
+legible-by-construction」）は失効する — Path A では REAPER 自身がレンダするため、
+sample を使っても sim との乖離という問題自体が発生しない。
+一方、Consequences に書いた「pitch/filter/envelope が freeze されず live parameter に
+戻るため、進行追従・音作りの改善が song.py 上の数値変更だけで可能になる」という根拠は
+Path A でも変わらず有効（sample は焼いた時点で固定される一方、synth パラメータは
+song.py を直すだけで REAPER 側も追従する）。よって本 ADR の decision（synth-first を
+既定にする）自体は Superseded ではなく、根拠だけ差し替えて存続する。
+
 ## Context
 
 このリポジトリ（`src/reaper-python/`）の核心は「モデル（agent）は音を聴けない → `kita check` の
