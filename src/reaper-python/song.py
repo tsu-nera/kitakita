@@ -13,6 +13,7 @@
 from kita import (
     ROOT,
     Duck,
+    Hit,
     Reverb,
     Sampler,
     Song,
@@ -223,7 +224,50 @@ FULL = NO_PADS + [pads]
 #   lead は全区間 MELODY 1本で、変わるのは articulation だけ。
 #   pads は breakdown で入って以降そのまま(outro にも残す)。入りが breakdown の
 #   合図になり、drums が戻ってからは和声の糊として残る。
-song = Song(bpm=138, sample_root=SAMPLES, tracks=FULL, sections=[
+# -----------------------------------------------------------------------------
+# transition FX (Issue #32): セクション境界を跨いで「この小節のこの拍で1回だけ」
+#   鳴る one-shot。section() の「トラックセット + ループするクリップ」には載らない
+#   ため Hit という独立した層で song に持つ(kita/model.py の Hit / Song.hits)。
+#   RS5k は1トラック1サンプル固定なので、5素材ぶん専用トラックを分ける。
+#   どの section() にも渡さない(=Section.play に載らない=セクション由来のイベントは
+#   ゼロ)ため、Track.clip には鳴らない空クリップを渡しておく。
+#   group="fx" でまとめ、tracks リストの末尾に連続して置く(group 連続性の検証のため)。
+# -----------------------------------------------------------------------------
+NO_CLIP = steps("." * 16)
+
+# gain_db は全体トリム後の基準(-1.6dB, 上のコメント参照)に対する相対値。
+#   drop 頭は crash + impact + フルミックスが重なる最も危ない箇所なので、
+#   ここを kita check の CLIP! が消えるまで下げて決めた。
+crash = Track("crash", Sampler("Drum - Crash - One Shot/DPT_Crash_One_Shot_Classic.wav"),
+              NO_CLIP, gain_db=-14.0, group="fx")
+impact = Track("impact", Sampler(
+    "FX - Impacts - One Shot/DPT_138_FX_Impact_One_Shot_Criticalimpact.wav"),
+    NO_CLIP, gain_db=-16.0, group="fx")
+rcym = Track("rcym", Sampler(
+    "FX - Reverse Cymbal - One Shots/DPT_138_FX_Reverse_Cymbal_One_Shot_Intense.wav"),
+    NO_CLIP, gain_db=-18.0, group="fx")
+riser = Track("riser", Sampler(
+    "FX - Sweep - One Shots/DPT_138_FX_Sweep_One_Shot_Tunnelrise.wav"),
+    NO_CLIP, gain_db=-18.0, group="fx")
+fill = Track("fill", Sampler(
+    "Drum - Fill - One Shots/DPT_138_Drum_Fill_One_Shot_Fillshot.wav"),
+    NO_CLIP, gain_db=-14.0, group="fx")
+FX_TRACKS = [crash, impact, rcym, riser, fill]
+
+# 配置(issue #32 初版)。rcym/riser は align="end" で「境界で終わる」音として
+#   前セクションへ食い込ませる(reverse cymbal / riser の本質)。
+HITS = [
+    Hit("rcym", at="breakdown:1.1", align="end"),  # main 末尾から吸い込まれて breakdown 頭で消える
+    Hit("rcym", at="drop:1.1", align="end"),        # build 後半から drop 頭へ
+    Hit("riser", at="drop:1.1", align="end"),       # build 最後の2小節
+    Hit("fill", at="build:8.1"),                    # build 最終小節
+    Hit("crash", at="drop:1.1"),
+    Hit("impact", at="drop:1.1"),
+    Hit("crash", at="drop2:1.1"),
+    Hit("impact", at="drop2:1.1"),
+]
+
+song = Song(bpm=138, sample_root=SAMPLES, tracks=FULL + FX_TRACKS, sections=[
     section("intro", 8, [kick, ohat, subbass]),
     section("main", 16, NO_PADS),
     section("breakdown", 8, [subbass] + LEADS + [pads]),
@@ -231,4 +275,4 @@ song = Song(bpm=138, sample_root=SAMPLES, tracks=FULL, sections=[
     section("drop", 8, FULL, override=LEAD_GATED_OVERRIDE),
     section("drop2", 8, FULL, override=LEAD_ARPED_OVERRIDE),
     section("outro", 8, [kick, ohat, subbass, pads]),
-])
+], hits=HITS)
