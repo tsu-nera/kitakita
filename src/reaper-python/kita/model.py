@@ -7,6 +7,7 @@ Event. Extending the musical vocabulary means adding Clip builders
 from __future__ import annotations
 
 import importlib.util
+import wave
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
@@ -160,11 +161,30 @@ def section(name: str, bars: int, tracks: list[Track],
 
 
 @dataclass(frozen=True)
+class Hit:
+    """セクション境界を跨ぐ位置指定 one-shot(#32)。
+
+    section() のトラックセットとは独立した層で、「この小節のこの拍で1回だけ」
+    鳴る transition FX (crash / impact / riser / reverse cymbal / fill) の席。
+    at は "<section>:<bar>.<beat>" (bar/beat とも1始まり) でセクション相対位置を表す。
+    align="start" はその位置から鳴り始め、align="end" は素材の尺だけ手前から
+    鳴り始めてその位置で鳴り終わる(reverse cymbal / riser のように前セクションへ
+    食い込んで境界で消える音のため)。尺は wav ヘッダから算出するので、
+    align="end" を使う track の素材は実在している必要がある。
+    """
+    track: str
+    at: str
+    align: str = "start"
+    velocity: int = 100
+
+
+@dataclass(frozen=True)
 class Song:
     bpm: float
     sample_root: Path
     tracks: list[Track]
     sections: list[Section] = field(default_factory=list)
+    hits: list[Hit] = field(default_factory=list)
     loop_bars: int = 4  # sections が空のとき(ジャム時)の暗黙ループ長
 
     def __post_init__(self):
@@ -192,6 +212,55 @@ class Song:
                 raise ValueError(f"track {t.name!r}: duck.release must be positive")
             if t.duck.depth_db >= 0:
                 raise ValueError(f"track {t.name!r}: duck.depth_db must be negative")
+        section_names = {s.name for s in self.effective_sections}
+        for h in self.hits:
+            if h.track not in names:
+                raise ValueError(f"hit: unknown track {h.track!r}")
+            if not isinstance(self.track(h.track).instrument, Sampler):
+                raise ValueError(
+                    f"hit: track {h.track!r} must be a Sampler (one-shot 専用の席)")
+            if h.align not in ("start", "end"):
+                raise ValueError(f"hit: align must be 'start' or 'end' (got {h.align!r})")
+            sec_name, _, _ = h.at.partition(":")
+            if sec_name not in section_names:
+                raise ValueError(f"hit: unknown section {sec_name!r} in at={h.at!r}")
+            if self._hit_abs_beat(h) < 0:
+                raise ValueError(
+                    f"hit {h.track!r} at={h.at!r} align={h.align!r}: "
+                    f"resolves before song start")
+
+    def _hit_abs_beat(self, hit: Hit) -> float:
+        sec_name, _, pos = hit.at.partition(":")
+        bar_s, _, beat_s = pos.partition(".")
+        bar, beat = int(bar_s), int(beat_s)
+        for sec, start_bar, _ in self.section_bounds():
+            if sec.name == sec_name:
+                abs_beat = (start_bar + (bar - 1)) * BEATS_PER_BAR + (beat - 1)
+                if hit.align == "end":
+                    abs_beat -= self.sample_beats(self.track(hit.track))
+                return abs_beat
+        raise ValueError(f"hit: unknown section {sec_name!r} in at={hit.at!r}")
+
+    def sample_beats(self, track: Track) -> float:
+        """track の素材の尺を拍換算で返す(wav ヘッダのみ読む)。"""
+        with wave.open(str(self.sample_path(track)), "rb") as w:
+            frames, sr = w.getnframes(), w.getframerate()
+        seconds = frames / sr
+        return seconds * self.bpm / 60.0
+
+    def hit_events(self, track: Track) -> list[Event]:
+        """この track を対象にした hits を song 絶対拍の Event 列にして返す。"""
+        events = []
+        for h in self.hits:
+            if h.track != track.name:
+                continue
+            events.append(Event(
+                beat=self._hit_abs_beat(h),
+                pitch=track.instrument.note,
+                velocity=h.velocity,
+                duration=self.sample_beats(track),
+            ))
+        return events
 
     def track(self, name: str) -> Track:
         for t in self.tracks:

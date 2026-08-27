@@ -5,6 +5,7 @@ song.py が書きやすいよう DSL の語彙をトップレベルへ再輸出�
 from kita.model import (  # noqa: F401
     Duck,
     Event,
+    Hit,
     Reverb,
     Sampler,
     Section,

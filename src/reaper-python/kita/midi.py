@@ -23,7 +23,8 @@ def track_events(song: Song, track: Track) -> list[Event]:
             events += [replace(e, beat=e.beat + offset)
                        for e in clip.events(sec.bars, track.instrument.note)]
         bar += sec.bars
-    return events
+    events += song.hit_events(track)
+    return sorted(events, key=lambda e: e.beat)
 
 
 def events_to_midi(events: list[Event], bpm: float, path: Path) -> None:
