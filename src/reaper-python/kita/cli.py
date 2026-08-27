@@ -34,6 +34,10 @@ def main() -> None:
     sub.add_parser("suggest", help="目標バランスへ寄せる gain_db を提案")
     p_render = sub.add_parser("render", help="全曲オフライン合成 wav")
     p_render.add_argument("out")
+    p_render.add_argument("--reaper", action="store_true",
+                          help="sim ではなく REAPER 実機にレンダさせる(要 REAPER 起動)")
+    p_render.add_argument("--stems", action="store_true",
+                          help="--reaper 併用時: master でなくトラック別 wav を出す")
     p_bands = sub.add_parser("bands", help="サンプル帯域スペクトル")
     p_bands.add_argument("target", help="track名 or wav パス")
     p_proc = sub.add_parser("reaper", help="REAPER プロセス制御")
@@ -84,8 +88,19 @@ def main() -> None:
         from kita import sim
         sim.suggest(song)
     elif args.cmd == "render":
-        from kita import sim
-        sim.render(song, Path(args.out))
+        if args.reaper:
+            from kita.reaper import render as reaper_render
+            result = reaper_render.render(Path(args.out), stems=args.stems)
+            status = "ok" if result["ok"] else "FAILED (dialog guard fired)"
+            print(f"{status}  out={result['out_dir']}  "
+                  f"elapsed={result['elapsed']:.2f}s")
+            if result["dialogs"]:
+                print(f"dialogs: {result['dialogs']}")
+            if not result["ok"]:
+                raise SystemExit(1)
+        else:
+            from kita import sim
+            sim.render(song, Path(args.out))
     elif args.cmd == "bands":
         from kita import sim
         sim.bands(song, args.target)
