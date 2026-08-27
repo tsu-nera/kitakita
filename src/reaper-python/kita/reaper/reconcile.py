@@ -213,152 +213,160 @@ def reconcile(song: Song, dry: bool = False) -> None:
         if isinstance(t.instrument, Sampler) and not song.sample_path(t).exists():
             raise FileNotFoundError(song.sample_path(t))
 
-    p = reapy.Project()
-    layout = build_layout(song)
-    known = {e["name"] for e in layout}
+    # reapy の 1 往復 = REAPER の defer 1 tick ≒ 35ms (Issue #35 実測)。所要時間は
+    # 概ね「呼び出し回数 × 35ms」になるので、最適化すべきは処理量ではなく往復回数。
+    # inside_reaper() で本体全体を 1 リクエストへ束ねることで、差分ゼロの sync が
+    # 18.57s → 0.28s(実測)まで縮む。ロジック・出力文字列は一切変えていない。
+    with reapy.inside_reaper():
+        p = reapy.Project()
+        layout = build_layout(song)
+        known = {e["name"] for e in layout}
 
-    if dry:
+        if dry:
+            if abs(p.bpm - song.bpm) > 1e-6:
+                print(f"[dry] bpm: {p.bpm} -> {song.bpm}")
+            for e in layout:
+                tag = "exists" if find_track(p, e["name"]) is not None else "create"
+                print(f"[dry] {e['name']:6s} {e['kind']:6s} depth={e['depth']:+d} ({tag})")
+            print(f"[dry] order: {' > '.join(e['name'] for e in layout)}")
+            for t in song.tracks:
+                if t.duck is not None:
+                    n_pts = len(_duck_target_points(song, t))
+                    print(f"[dry] {t.name:6s} duck <- {t.duck.source} "
+                          f"depth={t.duck.depth_db:+.1f}dB ({n_pts}pt planned)")
+            _reconcile_regions(p, song, dry=True)
+            extra = [t.name for t in p.tracks if t.name not in known]
+            if extra:
+                print(f"[dry] not in song (untouched): {extra}")
+            return
+
         if abs(p.bpm - song.bpm) > 1e-6:
-            print(f"[dry] bpm: {p.bpm} -> {song.bpm}")
+            p.bpm = song.bpm
+            print(f"  bpm -> {song.bpm}")
+
+        # 1) 存在を担保しつつ各トラックを reconcile
         for e in layout:
-            tag = "exists" if find_track(p, e["name"]) is not None else "create"
-            print(f"[dry] {e['name']:6s} {e['kind']:6s} depth={e['depth']:+d} ({tag})")
-        print(f"[dry] order: {' > '.join(e['name'] for e in layout)}")
-        for t in song.tracks:
-            if t.duck is not None:
-                n_pts = len(_duck_target_points(song, t))
-                print(f"[dry] {t.name:6s} duck <- {t.duck.source} "
-                      f"depth={t.duck.depth_db:+.1f}dB ({n_pts}pt planned)")
-        _reconcile_regions(p, song, dry=True)
+            track = find_track(p, e["name"])
+            tstate = "exists" if track is not None else "created"
+            if track is None:
+                track = p.add_track(name=e["name"])
+            if e["kind"] == "bus":
+                detail = "bus"
+            elif isinstance(e["track"].instrument, Synth):
+                detail = _reconcile_synth(track, e["track"])
+            else:
+                detail = _reconcile_sample(track, e["track"], str(song.sample_path(e["track"])))
+            if e["kind"] != "bus":
+                detail = f"{detail} {_reconcile_duck(track, song, e['track'])}"
+            print(f"  {e['name']:6s} {tstate:7s} {detail}")
+
+        # 2) layout 順へ並べ替え(左から確定。目的トラックを位置 idx へ引き上げる)
+        for idx, e in enumerate(layout):
+            track = find_track(p, e["name"])
+            RPR.SetOnlyTrackSelected(track.id)
+            RPR.ReorderSelectedTracks(idx, 0)
+
+        # 3) folder 階層(I_FOLDERDEPTH)を設定。並べ替え後に行う
+        for e in layout:
+            track = find_track(p, e["name"])
+            RPR.SetMediaTrackInfo_Value(track.id, "I_FOLDERDEPTH", float(e["depth"]))
+
+        # 4) セクション境界のリージョン
+        _reconcile_regions(p, song, dry=False)
+
         extra = [t.name for t in p.tracks if t.name not in known]
         if extra:
-            print(f"[dry] not in song (untouched): {extra}")
-        return
-
-    if abs(p.bpm - song.bpm) > 1e-6:
-        p.bpm = song.bpm
-        print(f"  bpm -> {song.bpm}")
-
-    # 1) 存在を担保しつつ各トラックを reconcile
-    for e in layout:
-        track = find_track(p, e["name"])
-        tstate = "exists" if track is not None else "created"
-        if track is None:
-            track = p.add_track(name=e["name"])
-        if e["kind"] == "bus":
-            detail = "bus"
-        elif isinstance(e["track"].instrument, Synth):
-            detail = _reconcile_synth(track, e["track"])
-        else:
-            detail = _reconcile_sample(track, e["track"], str(song.sample_path(e["track"])))
-        if e["kind"] != "bus":
-            detail = f"{detail} {_reconcile_duck(track, song, e['track'])}"
-        print(f"  {e['name']:6s} {tstate:7s} {detail}")
-
-    # 2) layout 順へ並べ替え(左から確定。目的トラックを位置 idx へ引き上げる)
-    for idx, e in enumerate(layout):
-        track = find_track(p, e["name"])
-        RPR.SetOnlyTrackSelected(track.id)
-        RPR.ReorderSelectedTracks(idx, 0)
-
-    # 3) folder 階層(I_FOLDERDEPTH)を設定。並べ替え後に行う
-    for e in layout:
-        track = find_track(p, e["name"])
-        RPR.SetMediaTrackInfo_Value(track.id, "I_FOLDERDEPTH", float(e["depth"]))
-
-    # 4) セクション境界のリージョン
-    _reconcile_regions(p, song, dry=False)
-
-    extra = [t.name for t in p.tracks if t.name not in known]
-    if extra:
-        print(f"note: {len(extra)} track(s) not in song (left untouched): {extra}")
-    print(f"done. reaper tracks: {p.n_tracks}")
+            print(f"note: {len(extra)} track(s) not in song (left untouched): {extra}")
+        print(f"done. reaper tracks: {p.n_tracks}")
 
 
 def status(song: Song) -> bool:
     """Drift report。Reaper が song と一致していれば True。"""
-    p = reapy.Project()
-    by_name = {t.name: t for t in p.tracks}
-    ok = True
+    # reconcile() と同じ理由(Issue #35)で本体全体を inside_reaper() で束ねる。
+    # 実測: 3.52s → 0.09s。
+    with reapy.inside_reaper():
+        p = reapy.Project()
+        by_name = {t.name: t for t in p.tracks}
+        ok = True
 
-    if abs(p.bpm - song.bpm) > 1e-6:
-        print(f"bpm     : {p.bpm} (song {song.bpm})  DRIFT")
-        ok = False
-    else:
-        print(f"bpm     : {p.bpm}  ok")
-    bus_names = song.bus_names
-    print(f"tracks  : reaper={p.n_tracks} song={len(song.tracks)} bus={len(bus_names)}")
-
-    for b in bus_names:
-        present = "ok" if b in by_name else "MISSING"
-        if b not in by_name:
+        if abs(p.bpm - song.bpm) > 1e-6:
+            print(f"bpm     : {p.bpm} (song {song.bpm})  DRIFT")
             ok = False
-        print(f"  {b:5s} bus (folder) {present}")
+        else:
+            print(f"bpm     : {p.bpm}  ok")
+        bus_names = song.bus_names
+        print(f"tracks  : reaper={p.n_tracks} song={len(song.tracks)} bus={len(bus_names)}")
 
-    for st in song.tracks:
-        t = by_name.get(st.name)
-        if t is None:
-            print(f"  {st.name:5s} MISSING (not in Reaper)")
-            ok = False
-            continue
-        if isinstance(st.instrument, Synth):
-            if synth_index(t) < 0:
-                print(f"  {st.name:5s} no {SYNTH_FX}")
+        for b in bus_names:
+            present = "ok" if b in by_name else "MISSING"
+            if b not in by_name:
                 ok = False
-            else:
-                print(f"  {st.name:5s} fx=ok items={t.n_items} synth=ok "
-                      f"(wave={st.instrument.wave})")
-            continue
-        fx_idx = sampler_index(t)
-        if fx_idx < 0:
-            print(f"  {st.name:5s} no {SAMPLER_FX}")
-            ok = False
-            continue
-        cur = get_file0(t, fx_idx)
-        want = str(song.sample_path(st))
-        sample_ok = norm(cur) == norm(want)
-        flag = "ok" if sample_ok else "SAMPLE-DRIFT"
-        if not sample_ok:
-            ok = False
-        print(f"  {st.name:5s} fx=ok items={t.n_items} sample={flag}"
-              f"  ({song.sample_path(st).name})")
-        if not sample_ok:
-            print(f"        reaper: {cur or '(empty)'}")
+            print(f"  {b:5s} bus (folder) {present}")
 
-    for st in song.tracks:
-        t = by_name.get(st.name)
-        if t is None:
-            continue
-        env = get_volume_envelope(t)
-        existing = envelope_points(env) if env is not None else []
-        if st.duck is None:
-            flag = "ok" if not existing else "DRIFT (stale points)"
-            if existing:
+        for st in song.tracks:
+            t = by_name.get(st.name)
+            if t is None:
+                print(f"  {st.name:5s} MISSING (not in Reaper)")
                 ok = False
-            print(f"  {st.name:5s} duck none  {flag}")
-            continue
-        desired = _duck_target_points(song, st)
-        duck_ok = _duck_points_match(existing, desired)
-        flag = "ok" if duck_ok else "DRIFT"
-        if not duck_ok:
+                continue
+            if isinstance(st.instrument, Synth):
+                if synth_index(t) < 0:
+                    print(f"  {st.name:5s} no {SYNTH_FX}")
+                    ok = False
+                else:
+                    print(f"  {st.name:5s} fx=ok items={t.n_items} synth=ok "
+                          f"(wave={st.instrument.wave})")
+                continue
+            fx_idx = sampler_index(t)
+            if fx_idx < 0:
+                print(f"  {st.name:5s} no {SAMPLER_FX}")
+                ok = False
+                continue
+            cur = get_file0(t, fx_idx)
+            want = str(song.sample_path(st))
+            sample_ok = norm(cur) == norm(want)
+            flag = "ok" if sample_ok else "SAMPLE-DRIFT"
+            if not sample_ok:
+                ok = False
+            print(f"  {st.name:5s} fx=ok items={t.n_items} sample={flag}"
+                  f"  ({song.sample_path(st).name})")
+            if not sample_ok:
+                print(f"        reaper: {cur or '(empty)'}")
+
+        for st in song.tracks:
+            t = by_name.get(st.name)
+            if t is None:
+                continue
+            env = get_volume_envelope(t)
+            existing = envelope_points(env) if env is not None else []
+            if st.duck is None:
+                flag = "ok" if not existing else "DRIFT (stale points)"
+                if existing:
+                    ok = False
+                print(f"  {st.name:5s} duck none  {flag}")
+                continue
+            desired = _duck_target_points(song, st)
+            duck_ok = _duck_points_match(existing, desired)
+            flag = "ok" if duck_ok else "DRIFT"
+            if not duck_ok:
+                ok = False
+            print(f"  {st.name:5s} duck<-{st.duck.source:6s} "
+                  f"points={len(existing)}/{len(desired)}  {flag}")
+
+        desired = desired_regions(song)
+        existing = list_regions(p)
+        if regions_match(existing, desired):
+            print(f"regions : {len(desired)} ok "
+                  f"({', '.join(n for n, _, _ in desired) or 'none'})")
+        else:
             ok = False
-        print(f"  {st.name:5s} duck<-{st.duck.source:6s} "
-              f"points={len(existing)}/{len(desired)}  {flag}")
+            print(f"regions : DRIFT (reaper={[(r[0]) for r in existing]} "
+                  f"song={[n for n, _, _ in desired]})")
 
-    desired = desired_regions(song)
-    existing = list_regions(p)
-    if regions_match(existing, desired):
-        print(f"regions : {len(desired)} ok "
-              f"({', '.join(n for n, _, _ in desired) or 'none'})")
-    else:
-        ok = False
-        print(f"regions : DRIFT (reaper={[(r[0]) for r in existing]} "
-              f"song={[n for n, _, _ in desired]})")
+        known = {t.name for t in song.tracks} | set(bus_names)
+        extra = [n for n in by_name if n not in known]
+        if extra:
+            print(f"extra   : not in song: {extra}")
 
-    known = {t.name for t in song.tracks} | set(bus_names)
-    extra = [n for n in by_name if n not in known]
-    if extra:
-        print(f"extra   : not in song: {extra}")
-
-    print("=> in sync" if ok else "=> drift detected")
-    return ok
+        print("=> in sync" if ok else "=> drift detected")
+        return ok

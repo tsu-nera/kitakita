@@ -96,13 +96,34 @@ def filter_index(track) -> int:
     return -1
 
 
+# fx_name(FX の種類) → (パラメータ名 → index) のプロセス内キャッシュ。
+# パラメータ配置は FX の"種類"ごとに不変(ReaSamplomatic/ReaSynth のビルドが
+# 差し替わらない限り index は変わらない)なのに、トラック単位で毎回
+# TrackFX_GetParamName を 1 パラメータずつ引き直すと、ReaSynth(18 パラメータ)
+# だけで 19 往復 = 0.68 秒かかり、synth 持ちトラック数ぶん(実曲で 6 本)
+# 繰り返される(Issue #35)。fx_name をキーにすれば、同じ FX を持つトラック間で
+# 往復が再利用され、プロセス内で FX 種別ごとに 1 回で済む。
+#
+# _scale_to と同様プロセス内メモ化だが、こちらは lru_cache を関数に直接付けない。
+# track は ReapyObject(__eq__ はあるが __hash__ が無く unhashable)なので、
+# track を引数に取る関数へ lru_cache を付けるとキャッシュ生成時に TypeError に
+# なる上、仮にハッシュ化できても track ごとに別キーとなり意味を失う。そのため
+# キーには fx_name(str)だけを使う手書きの dict キャッシュにしている。
+_synth_param_cache: dict[str, dict[str, int]] = {}
+
+
 def synth_param_indices(track, fx_idx: int) -> dict[str, int]:
     """ReaSynth のパラメータ名 → index。波形 mix を名前で引くため(index はビルド差あり)。"""
+    fx_name = _fx_name(track, fx_idx)
+    cached = _synth_param_cache.get(fx_name)
+    if cached is not None:
+        return cached
     out: dict[str, int] = {}
     for i in range(int(RPR.TrackFX_GetNumParams(track.id, fx_idx))):
         ret = RPR.TrackFX_GetParamName(track.id, fx_idx, i, "", 256)
         name = str(ret[4]) if isinstance(ret, (tuple, list)) and len(ret) >= 5 else str(ret)
         out[name.lower()] = i
+    _synth_param_cache[fx_name] = out
     return out
 
 
