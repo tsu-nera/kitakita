@@ -16,6 +16,11 @@ Event 列は midi.py と同じ Clip.events() 由来 — パターン解釈の二
 掛けるので計測にも書き出しにも乗るが、REAPER 側は dry のまま鳴る(fx.py 参照)。
 計測は一貫してモノラル(リバーブ後に左右平均へ畳む)。ステレオのまま出るのは
 kita render の wav だけ。
+
+サンプルはステレオネイティブに読む(#37)。reverse cymbal / riser のような
+L/R が別信号の素材は side 成分が音色そのものなので、mono 合算すると位相打ち消しで
+消える。計測(check/suggest)は上記の通り左右平均へ畳むため影響しないが、
+render の wav と _finish 内部のバッファはステレオのまま流す。
 """
 from __future__ import annotations
 
@@ -38,8 +43,12 @@ BALANCE_BARS = 4  # バランス計測はデフォルト clip の4小節ルー�
 TARGET_PEAK_UNDER_KICK = {"subbass": -2.5, "clap": -4.0, "ohat": -6.0}
 
 
-def load_mono(path: Path) -> np.ndarray:
-    """wav を mono float(-1..1) で読み、SR へ素朴にリサンプルする。"""
+def load_stereo(path: Path) -> np.ndarray:
+    """wav を (2, N) float(-1..1) で読み、SR へ素朴にリサンプルする。
+
+    mono ファイルは L=R へ複製して (2, N) に揃える(#37: side 成分を持つ
+    ステレオ素材を mono 合算で潰さないため、下流は常にステレオ前提でよい)。
+    """
     w = wave.open(str(path), "rb")
     sr, n, ch, sw = w.getframerate(), w.getnframes(), w.getnchannels(), w.getsampwidth()
     raw = w.readframes(n)
@@ -55,10 +64,14 @@ def load_mono(path: Path) -> np.ndarray:
     else:
         raise ValueError(f"unsupported sample width: {sw} bytes ({path.name})")
     if ch == 2:
-        a = a.reshape(-1, 2).mean(axis=1)
+        a = a.reshape(-1, 2).T  # (2, N)
+    else:
+        a = np.stack([a, a])  # mono -> L=R 複製
     if sr != SR:
-        a = np.interp(np.linspace(0, len(a) - 1, int(len(a) * SR / sr)),
-                      np.arange(len(a)), a)
+        n_new = int(a.shape[-1] * SR / sr)
+        x_old = np.arange(a.shape[-1])
+        x_new = np.linspace(0, a.shape[-1] - 1, n_new)
+        a = np.stack([np.interp(x_new, x_old, ch_data) for ch_data in a])
     return a
 
 
@@ -66,13 +79,15 @@ def load_mono(path: Path) -> np.ndarray:
 
 def _render_events(events: list[Event], sample: np.ndarray, gain: float,
                    bpm: float, total_bars: int) -> np.ndarray:
+    """sample は mono(1D) でも stereo((2,N)) でもよく、その形のまま buf を確保する。"""
     spb = 60.0 / bpm
     total = int(total_bars * 4 * spb * SR) + SR  # +1s でサンプル尻を収める
-    buf = np.zeros(total)
+    buf = np.zeros(sample.shape[:-1] + (total,))
+    n = sample.shape[-1]
     for ev in events:
         s = int(ev.beat * spb * SR)
-        e = min(s + len(sample), total)
-        buf[s:e] += sample[:e - s] * gain * (ev.velocity / 127.0)
+        e = min(s + n, total)
+        buf[..., s:e] += sample[..., :e - s] * gain * (ev.velocity / 127.0)
     return buf
 
 
@@ -134,20 +149,21 @@ def _apply_duck(buf: np.ndarray, points: list[tuple[float, float]]) -> np.ndarra
         return buf
     times = np.array([p[0] for p in points])
     gains = np.array([p[1] for p in points])
-    t = np.arange(len(buf)) / SR
+    t = np.arange(buf.shape[-1]) / SR
     env = np.interp(t, times, gains, left=1.0, right=1.0)
-    return buf * env
+    return buf * env  # env は (N,) で末尾軸に broadcast。(2,N) にもそのまま乗る
 
 
 def _finish(buf: np.ndarray, track: Track, stereo: bool) -> np.ndarray:
-    """duck 後の mono バッファへ FX を掛け、mono か (2,N) を返す。
+    """duck 後のバッファへ FX を掛け、mono か (2,N) を返す。
 
-    リバーブは唯一のステレオ源なので FX 層は常にステレオで処理し、計測側では
-    M 成分(左右平均)へ畳んで従来の 1D metrics をそのまま使う(#4)。
+    buf は sample 由来なら既に (2,N)、synth 由来なら mono(1D) — synth は音源として
+    mono なので to_stereo で左右複製する(#37)。FX 層は常にステレオで処理し、
+    計測側では M 成分(左右平均)へ畳んで従来の 1D metrics をそのまま使う(#4)。
     """
-    if track.reverb is None:
-        return fx.to_stereo(buf) if stereo else buf
-    st = fx.apply_reverb(fx.to_stereo(buf), track.reverb)
+    st = buf if buf.ndim == 2 else fx.to_stereo(buf)
+    if track.reverb is not None:
+        st = fx.apply_reverb(st, track.reverb)
     return st if stereo else st.mean(axis=0)
 
 
@@ -161,7 +177,7 @@ def render_track_full(song: Song, track: Track, gain_db: float | None = None,
                             song.total_bars, track.instrument.sustain,
                             track.instrument.detune)
     else:
-        buf = _render_events(events, load_mono(song.sample_path(track)),
+        buf = _render_events(events, load_stereo(song.sample_path(track)),
                              gain, song.bpm, song.total_bars)
     if track.duck is not None:
         buf = _apply_duck(buf, duck_points_song(song, track))
@@ -181,7 +197,7 @@ def render_clip_loop(song: Song, track: Track, bars: int = BALANCE_BARS,
         buf = _render_synth(events, track.instrument.wave, gain, song.bpm, bars,
                             track.instrument.sustain, track.instrument.detune)
     else:
-        buf = _render_events(events, load_mono(song.sample_path(track)),
+        buf = _render_events(events, load_stereo(song.sample_path(track)),
                              gain, song.bpm, bars)
     if track.duck is not None:
         buf = _apply_duck(buf, duck_points_loop(song, track, bars))
@@ -442,7 +458,7 @@ def bands(song: Song, target: str) -> None:
     except KeyError:
         p = Path(target)
         path = p if p.is_absolute() else song.sample_root / target
-    a = load_mono(path)
+    a = load_stereo(path).mean(axis=0)  # 帯域分析は左右平均へ畳んだ mono で行う
     freqs = [31, 40, 55, 80, 110, 160, 220, 320, 440, 640, 880, 1300, 2000]
     seg = a[:min(len(a), 16384)]
     mags = []
