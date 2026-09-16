@@ -261,29 +261,48 @@ def render_audio(song: Song, out_dir: Path, data: dict) -> None:
     data["audio"] = audio_map
 
 
-def _find_existing_audio(audio_dir: Path, data: dict) -> None:
-    """--audio 無し実行: 前回生成済みの音声ファイルがあればそれを指すだけ(合成しない)。
+def _find_existing_audio(song: Song, out_dir: Path, data: dict) -> None:
+    """--audio 無し実行: 前回生成済みの音声ファイルを指すだけ(合成しない)。
 
-    _full.wav が残っていれば、それを読むだけでエネルギー/セクション統計も埋める
-    (デコードのみなので即時性を壊さない)。
+    エネルギー/セクション統計は前回の arrangement.json から引き継ぐ。mp3 化で元の
+    wav は消えているので測り直す術が無く、測り直すには全曲合成(数秒)が要るため
+    「見るだけ」の即時性が壊れる。引き継ぐのは小節数とセクション構成が前回と
+    一致するときだけ — song.py の構造が変わっていたら古い数値は捨てる
+    (音声ファイル自体が古くなるのと同じ範囲の陳腐化に留める)。
     """
-    if not audio_dir.exists():
+    audio_dir = out_dir / "audio"
+    if audio_dir.exists():
+        audio_map: dict[str, str] = {}
+        for clip_id in data["clips"]:
+            for ext in (".mp3", ".wav"):
+                p = audio_dir / f"{clip_id}{ext}"
+                if p.exists():
+                    audio_map[clip_id] = f"audio/{p.name}"
+                    break
+        data["audio"] = audio_map
+
+    prev_path = out_dir / "arrangement.json"
+    if not prev_path.exists():
         return
-    audio_map: dict[str, str] = {}
-    for clip_id in data["clips"]:
-        for ext in (".mp3", ".wav"):
-            p = audio_dir / f"{clip_id}{ext}"
-            if p.exists():
-                audio_map[clip_id] = f"audio/{p.name}"
-                break
-    data["audio"] = audio_map
-    full_wav = audio_dir / "_full.wav"
-    if full_wav.exists():
-        mono = sim.load_stereo(full_wav).mean(axis=0)
-        _fill_energy(song_holder["song"], data, mono)
-
-
-song_holder: dict = {}  # _find_existing_audio が song を参照するための小さな受け渡し
+    try:
+        prev = json.loads(prev_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not prev.get("bar_peak_db"):
+        return
+    same = (prev.get("total_bars") == data["total_bars"]
+            and [s["name"] for s in prev.get("sections", [])]
+            == [s["name"] for s in data["sections"]])
+    if not same:
+        return
+    data["bar_peak_db"] = prev["bar_peak_db"]
+    data["energy_lo"] = prev.get("energy_lo", -30.0)
+    data["energy_hi"] = prev.get("energy_hi", 0.0)
+    prev_sec = {s["name"]: s for s in prev["sections"]}
+    for s in data["sections"]:
+        src = prev_sec.get(s["name"], {})
+        s["rms_db"] = src.get("rms_db")
+        s["peak_db"] = src.get("peak_db")
 
 
 # ---------- html ----------
@@ -296,12 +315,10 @@ def generate(song: Song, out_dir: Path, audio: bool = False) -> Path:
     """配置データ + HTML を out_dir へ書く。戻り値は生成した HTML のパス。"""
     out_dir.mkdir(parents=True, exist_ok=True)
     data = build_data(song)
-    audio_dir = out_dir / "audio"
     if audio:
         render_audio(song, out_dir, data)
     else:
-        song_holder["song"] = song
-        _find_existing_audio(audio_dir, data)
+        _find_existing_audio(song, out_dir, data)
 
     json_path = out_dir / "arrangement.json"
     json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
