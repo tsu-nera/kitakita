@@ -1,0 +1,312 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Kitakita 配置ビュー</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#F4F5F8; --panel:#FFFFFF; --sunk:#ECEEF3; --line:#D8DDE6; --line-strong:#B6BECD;
+  --ink:#151922; --ink-2:#4A5365; --ink-3:#7C8699;
+  --sig:#2F7A72;
+  --shadow:0 1px 2px rgba(18,24,38,.06),0 8px 24px rgba(18,24,38,.05);
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --ground:#11141B; --panel:#181C25; --sunk:#12161E; --line:#272D3A; --line-strong:#3B4353;
+  --ink:#E4E8F0; --ink-2:#A2ACBE; --ink-3:#727C8E;
+  --sig:#5FA79E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --ground:#11141B; --panel:#181C25; --sunk:#12161E; --line:#272D3A; --line-strong:#3B4353;
+  --ink:#E4E8F0; --ink-2:#A2ACBE; --ink-3:#727C8E;
+  --sig:#5FA79E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 72px;display:flex;flex-direction:column;gap:22px}
+
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px 28px;
+  padding-bottom:18px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:26px;font-weight:600;letter-spacing:-.015em;text-wrap:balance}
+.sub{margin:3px 0 0;color:var(--ink-2);font-size:13.5px}
+.facts{display:flex;gap:22px;margin-left:auto}
+.fact{display:flex;flex-direction:column;gap:1px}
+.fact b{font-size:17px;font-weight:600}
+.fact span{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+
+.board{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  box-shadow:var(--shadow);overflow:hidden}
+.board-scroll{overflow-x:auto}
+.board-inner{min-width:100%}
+
+.ruler{position:relative;height:24px;background:var(--sunk);border-bottom:1px solid var(--line)}
+.ruler i{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.ruler i.major{background:var(--line-strong)}
+.ruler b{position:absolute;top:4px;font-size:10px;font-weight:500;color:var(--ink-3);
+  transform:translateX(4px);font-family:"IBM Plex Mono",monospace}
+
+.band{position:relative;height:50px;background:var(--sunk);border-bottom:1px solid var(--line)}
+.sec{position:absolute;top:5px;bottom:5px;border:1px solid var(--line-strong);border-radius:5px;
+  background:var(--panel);cursor:pointer;padding:5px 8px;text-align:left;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:center;gap:1px;color:inherit;
+  font:inherit;transition:border-color .12s,background .12s}
+.sec:hover{border-color:var(--sig);background:color-mix(in srgb,var(--sig) 9%,var(--panel))}
+.sec[aria-current="true"]{border-color:var(--sig);background:color-mix(in srgb,var(--sig) 16%,var(--panel))}
+.sec:focus-visible{outline:2px solid var(--sig);outline-offset:1px}
+.sec.noaudio{cursor:default;opacity:.55}
+.sec em{font-style:normal;font-size:12px;font-weight:600;letter-spacing:.01em}
+.sec small{font-size:9.5px;color:var(--ink-3);font-family:"IBM Plex Mono",monospace}
+
+.rows{position:relative}
+.grp{display:flex;align-items:stretch;border-bottom:1px solid var(--line)}
+.grp:last-child{border-bottom:0}
+.grp-label{flex:0 0 118px;padding:7px 10px;background:var(--sunk);border-right:1px solid var(--line);
+  font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.grp-rows{flex:1;min-width:0}
+.row{position:relative;height:19px;border-bottom:1px dashed var(--line)}
+.row:last-child{border-bottom:0}
+.row-name{position:absolute;left:-118px;top:0;width:118px;height:19px;padding:0 10px;
+  display:flex;align-items:center;font-size:10.5px;color:var(--ink-2);
+  font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+.blk{position:absolute;top:3px;bottom:3px;border-left:2px solid var(--grp);border-radius:2px;
+  background:color-mix(in srgb, var(--grp) 22%, var(--panel))}
+.hit{position:absolute;top:2px;bottom:2px;border:1px solid var(--grp);border-radius:2px;
+  background:color-mix(in srgb, var(--grp) 14%, var(--panel))}
+.hit::before{content:"";position:absolute;left:-1px;top:-1px;bottom:-1px;width:3px;
+  background:var(--grp);border-radius:2px 0 0 2px}
+.hit.endal{border-style:dashed}
+.hit.endal::after{content:"";position:absolute;right:-1px;top:-1px;bottom:-1px;width:3px;
+  background:var(--grp);border-radius:0 2px 2px 0}
+
+.energy{position:relative;height:46px;background:var(--sunk);border-top:1px solid var(--line);
+  display:flex;align-items:flex-end;gap:0}
+.energy u{flex:1;background:var(--sig);opacity:.55;text-decoration:none;min-width:0}
+.energy .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:11.5px;color:var(--ink-3)}
+
+.head{position:absolute;top:0;bottom:0;width:2px;background:var(--sig);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--sig) 35%,transparent);
+  opacity:0;pointer-events:none;z-index:5}
+.head.on{opacity:1}
+
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.chip{border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);
+  border-radius:999px;padding:6px 13px;font:inherit;font-size:12.5px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;transition:border-color .12s,background .12s}
+.chip:hover{border-color:var(--sig);background:color-mix(in srgb,var(--sig) 10%,var(--panel))}
+.chip[aria-current="true"]{border-color:var(--sig);background:color-mix(in srgb,var(--sig) 18%,var(--panel))}
+.chip:focus-visible{outline:2px solid var(--sig);outline-offset:1px}
+.chip.noaudio{cursor:default;opacity:.55}
+.chip .bars{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink-3)}
+.zoom{display:flex;gap:4px;margin-left:8px}
+.zoom button{width:26px;height:26px;border-radius:6px;border:1px solid var(--line-strong);
+  background:var(--panel);color:var(--ink);cursor:pointer;font-size:14px;line-height:1}
+.zoom button:hover{border-color:var(--sig)}
+.now{margin-left:auto;font-size:12px;color:var(--ink-2);font-family:"IBM Plex Mono",monospace}
+
+h2{margin:0 0 2px;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px 15px;
+  display:flex;flex-direction:column;gap:9px}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:11.5px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:22px;height:11px;border-radius:2px;display:inline-block}
+.sw.s{background:color-mix(in srgb, var(--sig) 22%, var(--panel));border-left:2px solid var(--sig)}
+.sw.h{background:color-mix(in srgb, var(--sig) 14%, var(--panel));border:1px solid var(--sig)}
+.sw.hd{background:color-mix(in srgb, var(--sig) 14%, var(--panel));border:1px dashed var(--sig)}
+.note{font-size:12.5px;color:var(--ink-2);margin:0}
+.note code{font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+  background:var(--sunk);padding:1px 5px;border-radius:3px;border:1px solid var(--line)}
+.groups-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--ink-2)}
+.groups-legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--grp)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>配置ビュー</h1>
+      <p class="sub">セクションか境目をクリックすると、その区間が鳴って再生位置が走ります。</p>
+    </div>
+    <div class="facts mono" id="facts"></div>
+  </header>
+
+  <div class="controls" id="controls">
+    <div class="zoom"><button id="zoom-out" title="縮小">−</button><button id="zoom-in" title="拡大">+</button></div>
+    <span class="now" id="now">停止中</span>
+  </div>
+
+  <div class="board"><div class="board-scroll"><div class="board-inner" id="board">
+    <div class="ruler" id="ruler"></div>
+    <div class="band" id="band"></div>
+    <div class="rows" id="rows"></div>
+    <div class="energy" id="energy"></div>
+    <div class="head" id="head"></div>
+  </div></div></div>
+
+  <div class="legend">
+    <span><i class="sw s"></i> セクションで鳴るトラック (Section.play)</span>
+    <span><i class="sw h"></i> one-shot（開始位置ぞろえ）</span>
+    <span><i class="sw hd"></i> one-shot（<code>align="end"</code>）</span>
+    <span><i class="sw" style="background:var(--sig);opacity:.55"></i> 1小節ごとのピーク</span>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>グループ</h2>
+      <div class="groups-legend" id="glegend"></div>
+    </div>
+    <div class="card">
+      <h2>読み方</h2>
+      <p class="note"><b>縦の縁取りの箱</b>は <code>Song.hits</code>(one-shot)。幅は素材の実尺。</p>
+      <p class="note"><b>破線の枠</b>は <code>align="end"</code>。素材の末尾を境界にそろえるので、前のセクションへ食い込みます。</p>
+      <p class="note">色は <code>track.group</code> の出現順。数値はすべて <code>song.py</code> から生成しています。</p>
+    </div>
+  </div>
+</div>
+
+<audio id="au" preload="none"></audio>
+<script>
+const D = __DATA_JSON__;
+const TB = D.total_bars;
+const pc = b => (b / TB * 100) + "%";
+const board = document.getElementById("board");
+
+function fmtTime(sec) {
+  sec = Math.round(sec);
+  return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+}
+
+// facts
+const facts = document.getElementById("facts");
+[[D.bpm, "BPM"], [D.total_bars, "bars"], [fmtTime(D.length_sec), "length"],
+ [D.hits.length, "one-shots"]].forEach(([v, label]) => {
+  const f = document.createElement("div"); f.className = "fact";
+  f.innerHTML = `<b>${v}</b><span>${label}</span>`;
+  facts.appendChild(f);
+});
+
+// ruler
+const ru = document.getElementById("ruler");
+const step = TB > 96 ? 8 : 4, major = step * 2;
+for (let b = 0; b <= TB; b += step) {
+  const i = document.createElement("i");
+  i.style.left = pc(b); if (b % major === 0) i.className = "major";
+  ru.appendChild(i);
+  if (b % major === 0 && b < TB) { const t = document.createElement("b"); t.style.left = pc(b); t.textContent = b; ru.appendChild(t); }
+}
+
+// section band
+const band = document.getElementById("band");
+D.sections.forEach(s => {
+  const el = document.createElement("button");
+  const has = !!D.audio["s_" + s.name];
+  el.className = "sec" + (has ? "" : " noaudio");
+  el.style.left = pc(s.start); el.style.width = pc(s.end - s.start);
+  const peak = s.peak_db != null ? ` · peak ${s.peak_db.toFixed(1)}` : "";
+  el.innerHTML = `<em>${s.name}</em><small>bar ${s.start}-${s.end}${peak}</small>`;
+  el.dataset.clip = "s_" + s.name; el.dataset.b0 = s.start; el.dataset.b1 = s.end;
+  band.appendChild(el);
+});
+
+// track rows, grouped by track.group 出現順 (D.groups)
+const rows = document.getElementById("rows");
+D.groups.forEach(grp => {
+  const list = D.tracks.filter(t => t.group === grp.key);
+  if (!list.length) return;
+  const g = document.createElement("div"); g.className = "grp";
+  g.innerHTML = `<div class="grp-label">${grp.label}</div>`;
+  const rr = document.createElement("div"); rr.className = "grp-rows";
+  list.forEach(t => {
+    const r = document.createElement("div"); r.className = "row"; r.style.setProperty("--grp", t.color);
+    r.innerHTML = `<span class="row-name">${t.name}</span>`;
+    D.sections.forEach(s => {
+      if (!s.play.includes(t.name)) return;
+      const b = document.createElement("div"); b.className = "blk";
+      b.style.left = pc(s.start); b.style.width = pc(s.end - s.start); r.appendChild(b);
+    });
+    D.hits.filter(h => h.track === t.name).forEach(h => {
+      const b = document.createElement("div");
+      b.className = "hit" + (h.align === "end" ? " endal" : "");
+      b.style.left = pc(h.start_bar); b.style.width = pc(Math.max(h.end_bar - h.start_bar, .35));
+      b.title = `${h.track}  at="${h.at}" align="${h.align}"  bar ${h.start_bar.toFixed(2)}→${h.end_bar.toFixed(2)}`;
+      r.appendChild(b);
+    });
+    rr.appendChild(r);
+  });
+  g.appendChild(rr); rows.appendChild(g);
+});
+
+// groups legend
+document.getElementById("glegend").innerHTML = D.groups.map(g =>
+  `<span style="--grp:${g.color}"><i class="dot"></i>${g.label}</span>`).join("");
+
+// energy
+const en = document.getElementById("energy");
+if (D.bar_peak_db.length) {
+  const lo = D.energy_lo, hi = D.energy_hi;
+  D.bar_peak_db.forEach(v => {
+    const u = document.createElement("u");
+    u.style.height = Math.max(2, Math.min(100, (v - lo) / (hi - lo) * 100)) + "%";
+    en.appendChild(u);
+  });
+} else {
+  const empty = document.createElement("div"); empty.className = "empty";
+  empty.textContent = "音声未生成 (kita view --audio で生成)";
+  en.appendChild(empty);
+}
+
+// controls: chips (boundary + full song), data-driven
+const controls = document.getElementById("controls");
+const zoomEl = controls.querySelector(".zoom");
+D.chips.concat([{id: "_full", label: "全曲", b0: 0, b1: TB}]).forEach(c => {
+  const has = !!D.audio[c.id];
+  const el = document.createElement("button");
+  el.className = "chip" + (has ? "" : " noaudio");
+  const barsLabel = c.id === "_full" ? fmtTime(D.length_sec) : `bar ${c.b0.toFixed(1)}-${c.b1.toFixed(1)}`;
+  el.innerHTML = `${c.label} <span class="bars">${barsLabel}</span>`;
+  el.dataset.clip = c.id; el.dataset.b0 = c.b0; el.dataset.b1 = c.b1;
+  controls.insertBefore(el, zoomEl);
+});
+
+// zoom: board-inner の幅(px)を変えるだけ。子要素は % 指定なので自動で追従する
+let pxPerBar = Math.max(6, Math.min(30, 1600 / TB));
+function applyZoom() { board.style.width = (pxPerBar * TB) + "px"; }
+applyZoom();
+document.getElementById("zoom-in").addEventListener("click", () => { pxPerBar = Math.min(60, pxPerBar * 1.25); applyZoom(); });
+document.getElementById("zoom-out").addEventListener("click", () => { pxPerBar = Math.max(3, pxPerBar * 0.8); applyZoom(); });
+
+// playback
+const au = document.getElementById("au"), head = document.getElementById("head"), now = document.getElementById("now");
+let cur = null, raf = 0;
+function stop() {
+  au.pause(); head.classList.remove("on"); cancelAnimationFrame(raf);
+  document.querySelectorAll('[aria-current="true"]').forEach(e => e.removeAttribute("aria-current"));
+  now.textContent = "停止中"; cur = null;
+}
+function play(el) {
+  const clip = el.dataset.clip, b0 = +el.dataset.b0, b1 = +el.dataset.b1;
+  const src = D.audio[clip];
+  if (!src) { now.textContent = "音声なし (kita view --audio で生成)"; return; }
+  if (cur === el) { stop(); return; }
+  stop(); cur = el; el.setAttribute("aria-current", "true");
+  au.src = src; au.currentTime = 0;
+  au.play().then(() => {
+    head.classList.add("on");
+    now.textContent = `再生中 bar ${b0.toFixed(1)}-${b1.toFixed(1)}`;
+    const tick = () => {
+      const f = au.duration ? au.currentTime / au.duration : 0;
+      head.style.left = pc(b0 + (b1 - b0) * f);
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+  }).catch(() => { now.textContent = "再生できません"; });
+}
+document.querySelectorAll(".sec,.chip").forEach(el => el.addEventListener("click", () => play(el)));
+au.addEventListener("ended", stop);
+document.addEventListener("keydown", e => { if (e.key === "Escape") stop(); });
+</script>
