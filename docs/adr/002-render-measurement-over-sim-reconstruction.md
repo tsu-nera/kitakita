@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted (2026-08-27)
+Superseded by [ADR-003](003-pedalboard-vst3-offline-synthesis.md) (2026-09-19)
+
+Accepted (2026-08-27)。REAPER の評価期間切れでナグ画面（= ダイアログ = reapy の無期限ハング）
+が出るようになり、本決定の前提「REAPER が自動化から使えること」が崩れた。#39 で
+pedalboard + VST3 のオフライン合成が実測で通り、合成した音そのものが製品になるため、
+本 ADR が解こうとした「sim ≠ 実機」という問い自体が消える。
 
 ## Context
 
