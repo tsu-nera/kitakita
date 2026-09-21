@@ -40,6 +40,11 @@ def main() -> None:
                           help="--reaper 併用時: master でなくトラック別 wav を出す")
     p_bands = sub.add_parser("bands", help="サンプル帯域スペクトル")
     p_bands.add_argument("target", help="track名 or wav パス")
+    p_view = sub.add_parser("view", help="song.py -> 配置ビュー(HTML)を生成(#40, REAPER 非依存)")
+    p_view.add_argument("--audio", action="store_true",
+                        help="sim(pedalboard)で全曲合成し試聴音を生成する(付けなければ即時)")
+    p_view.add_argument("--out", help="出力先ディレクトリ (default: reaper-python/output/view)")
+    p_view.add_argument("--open", action="store_true", help="生成した HTML をブラウザで開く")
     p_proc = sub.add_parser("reaper", help="REAPER プロセス制御")
     p_proc.add_argument("args", nargs="*", help="start [project.rpp] | stop | restart | status")
 
@@ -104,6 +109,15 @@ def main() -> None:
     elif args.cmd == "bands":
         from kita import sim
         sim.bands(song, args.target)
+    elif args.cmd == "view":
+        from kita import view
+
+        out_dir = Path(args.out) if args.out else Path(__file__).resolve().parents[1] / "output" / "view"
+        html_path = view.generate(song, out_dir, audio=args.audio)
+        print(f"wrote {html_path}")
+        if args.open:
+            import webbrowser
+            webbrowser.open(html_path.resolve().as_uri())
 
 
 if __name__ == "__main__":
