@@ -273,6 +273,15 @@ HITS = [
     Hit("impact", at="drop:1.1", velocity=127),
     Hit("crash", at="drop2:1.1", velocity=127),
     Hit("impact", at="drop2:1.1", velocity=127),
+    # 空いていた3つの境界を埋める(#36 は drop 周辺だけ置いた)。トランスの定石では
+    # クラッシュは「主要セクションの頭」全部に置く — 境界が音で示されないと、
+    # 構成が変わったことが耳に伝わらないため。厚みは到達点の格で段差をつける:
+    #   drop(最厚: rcym+riser+fill+crash+impact) > build > main > outro
+    Hit("crash", at="main:1.1", velocity=110),      # 最初の到達。drop より控えめ
+    Hit("fill", at="intro:8.1", velocity=110),      # intro 最終小節、main へ送り込む
+    Hit("crash", at="build:1.1", velocity=118),     # drums が戻る合図
+    Hit("rcym", at="build:1.1", align="end", velocity=110),  # breakdown 後半から吸い込む
+    Hit("crash", at="outro:1.1", velocity=100),     # 最後の打点。以降は引き算
 ]
 
 song = Song(bpm=138, sample_root=SAMPLES, tracks=FULL + FX_TRACKS, sections=[

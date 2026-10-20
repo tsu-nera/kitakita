@@ -84,3 +84,8 @@ dough-samplesをオンライン読み込み設定済み：
 - EmuSP12
 - VCSL
 - mridangam
+
+## 用語
+
+独自用語を作らない。DTM/トランス制作の一般名称をそのまま使う（例: transition FX、riser、reverse cymbal）。
+一般名称が分からなければ「一般名称は未確認」と書く。訳語や短縮形を勝手に発明しない。
