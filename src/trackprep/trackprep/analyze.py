@@ -109,15 +109,19 @@ def bar_features(y: np.ndarray, sr: int, beats: np.ndarray, downbeats: np.ndarra
     ibi_mean = float(np.diff(beats).mean())
     kicks = np.array([kick_ratio(beats[i], beats[i + 1]) for i in range(len(beats) - 1)])
     bounds = list(downbeats) + [beats[-1] + ibi_mean]
-    rows = []
+    rows, counts = [], []
     for k in range(len(downbeats)):
         t0, t1 = bounds[k], bounds[k + 1]
         sl = slice(at(t0), max(at(t1), at(t0) + 1))
         kb = kicks[(beats[:-1] >= t0 - 0.01) & (beats[:-1] < t1 - 0.01)]
+        counts.append(int(((beats >= t0 - 0.01) & (beats < t1 - 0.01)).sum()))
         rows.append([rms[sl].mean(), low[sl].mean(), high[sl].mean(), np.median(kb) if len(kb) else 0.0])
     a = np.array(rows)
+    # reference = p95 over complete bars (modal beat count); partial bars must not define it
+    counts = np.array(counts)
+    full = counts == np.bincount(counts).argmax()
     for c in range(3):
-        a[:, c] /= max(a[:, c].max(), 1e-12)
+        a[:, c] = np.clip(a[:, c] / max(np.percentile(a[full, c], 95), 1e-12), 0, 1)
     return [
         {"bar": k + 1, "time": float(downbeats[k]), "rms": r[0], "low": r[1], "high": r[2], "kick": r[3]}
         for k, r in enumerate(a.tolist())
@@ -142,7 +146,7 @@ def estimate_sections(bars: list[dict], offset: int) -> list[dict]:
     for i, s in enumerate(starts):
         e = (starts[i + 1] - 1) if i + 1 < len(starts) else n
         sel = bars[s - 1:e]
-        phrases.append((s, e, np.mean([b["low"] for b in sel]), np.mean([b["rms"] for b in sel])))
+        phrases.append((s, e, np.median([b["low"] for b in sel]), np.median([b["rms"] for b in sel])))
 
     seen_kick = False
     out: list[dict] = []

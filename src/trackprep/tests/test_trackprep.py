@@ -51,6 +51,27 @@ def test_breakdown_and_constant_tempo():
     assert res["phrase_offset_bar"] == 1
 
 
+def test_partial_final_bar_does_not_define_normalization():
+    beats, downbeats = beat_times([(140, 40)])
+    bar = np.arange(len(beats)) // 4
+    kick = ~((bar >= 16) & (bar < 24))
+    y = render(beats, kick)
+    # final 2-beat bar with a 2x louder low band
+    t_end = beats[-1] + 60 / 140
+    extra = np.array([t_end, t_end + 60 / 140])
+    k = np.arange(int(0.25 * SR)) / SR
+    boom = 1.6 * np.sin(2 * np.pi * 55 * k) * np.exp(-k * 18)
+    y = np.concatenate([y, np.zeros(int(2 * SR))])
+    for b in extra:
+        s0 = int(b * SR)
+        y[s0:s0 + len(boom)] += boom
+    all_beats = np.concatenate([beats, extra])
+    res = analyze_signal(y, SR, all_beats, np.append(downbeats, t_end))
+    labels = [s["label"] for s in res["sections"]]
+    assert "break" not in labels
+    assert labels.count("breakdown") == 1
+
+
 def test_tempo_step_splits():
     beats, downbeats = beat_times([(138, 32), (142, 32)])
     res = analyze_signal(render(beats, np.ones(len(beats), bool)), SR, beats, downbeats)
