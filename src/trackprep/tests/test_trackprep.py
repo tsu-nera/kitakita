@@ -56,11 +56,11 @@ def test_partial_final_bar_does_not_define_normalization():
     bar = np.arange(len(beats)) // 4
     kick = ~((bar >= 16) & (bar < 24))
     y = render(beats, kick)
-    # final 2-beat bar with a 2x louder low band
+    # final 2-beat bar with a much louder low band (outlier for max-normalization)
     t_end = beats[-1] + 60 / 140
     extra = np.array([t_end, t_end + 60 / 140])
     k = np.arange(int(0.25 * SR)) / SR
-    boom = 1.6 * np.sin(2 * np.pi * 55 * k) * np.exp(-k * 18)
+    boom = 4.0 * np.sin(2 * np.pi * 55 * k) * np.exp(-k * 18)
     y = np.concatenate([y, np.zeros(int(2 * SR))])
     for b in extra:
         s0 = int(b * SR)
