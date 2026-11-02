@@ -7,13 +7,26 @@ beat / downbeat は [beat_this](https://github.com/CPJKU/beat_this)（CPU のみ
 
 ```bash
 cd src/trackprep && uv sync
-uv run trackprep analyze <audio...> [--force]   # MP3 / M4A / WAV。解析済みは飛ばす
+uv run trackprep analyze <audio...> [--force] [--full]   # MP3 / M4A / WAV。結果を stdout に JSONL で出す
 uv run trackprep show <audio|track_id> [--plot out.png]
 uv run pytest                                   # 合成音源テスト（beat_this は走らない）
 ```
 
 結果は `$XDG_CACHE_HOME/trackprep/<track_id>.json`（無ければ `~/.cache/trackprep/`）に 1 曲 1 ファイル。git 管理外。
 `track_id` は音声ファイルの中身の sha256 先頭 16 桁（ファイル名を変えても同じ）。
+
+## analyze の出力（agent 向け）
+
+- 入力 1 件につき JSON を 1 行（JSONL、`ensure_ascii=False`、改行・インデントなし）stdout に出す。順序は入力順。入力が 1 件ならそのまま JSON として読める。
+- 解析済みはキャッシュから読んで返す（再解析しない）。`--force` で再解析・保存し直してから返す。
+- 既定は要約: キャッシュ JSON から `beats` / `downbeats` / `bars` を除いたもの。`--full` でキャッシュ JSON と同じ全量。
+- stdout は JSON 行だけ。`analyzing` / `saved` / `skip (cached)` / `not found` などの進捗・エラーは stderr。
+- 存在しないパスは stdout に何も出さず stderr にメッセージを出して次へ進む。1 件でも失敗があれば終了コード 1、全件成功なら 0。
+- `show` は人間向けテキスト表のまま（機械可読な出力は `analyze` に一本化）。
+
+```bash
+uv run trackprep analyze a.mp3 | jq .tempo_segments
+```
 
 ## JSON の項目（`schema: 1`）
 

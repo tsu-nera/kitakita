@@ -1,4 +1,5 @@
 """Synthetic-audio tests. Beats are given as ground truth; beat_this is never run."""
+import json
 import shutil
 
 import numpy as np
@@ -149,6 +150,96 @@ def test_analyze_skips_cached_and_force_reruns(wav, monkeypatch, capsys):
         cli.main(["show", str(p)])
     assert e.value.code == 0
     assert "sections" in capsys.readouterr().out
+
+
+def _run(argv, capsys):
+    with pytest.raises(SystemExit) as e:
+        cli.main(argv)
+    cap = capsys.readouterr()
+    return e.value.code, cap.out, cap.err
+
+
+@pytest.fixture
+def fake_beats(wav, monkeypatch):
+    p, beats, downbeats = wav
+    calls = []
+
+    def fake(path):
+        calls.append(path)
+        return beats, downbeats
+
+    monkeypatch.setattr("trackprep.analyze.estimate_beats", fake)
+    return p, calls
+
+
+def test_analyze_summary_stdout(fake_beats, capsys):
+    p, _ = fake_beats
+    code, out, err = _run(["analyze", str(p)], capsys)
+    assert code == 0
+    lines = out.splitlines()
+    assert len(lines) == 1
+    d = json.loads(lines[0])
+    for k in ("beats", "downbeats", "bars"):
+        assert k not in d
+    for k in ("schema", "track_id", "path", "title", "duration", "source", "analyzer",
+              "tempo_segments", "anomalies", "phrase_offset_bar", "sections", "ending", "key"):
+        assert k in d
+    assert "analyzing" in err and "saved" in err
+
+
+def test_analyze_full_equals_cache(fake_beats, capsys):
+    p, _ = fake_beats
+    code, out, _ = _run(["analyze", str(p), "--full"], capsys)
+    assert code == 0
+    assert len(out.splitlines()) == 1
+    assert json.loads(out) == store.load(store.track_id(p))
+
+
+def test_analyze_two_inputs_in_order(fake_beats, cache, capsys):
+    p, _ = fake_beats
+    q = cache / "b.wav"
+    shutil.copy(p, q)
+    # Different content so track_id differs.
+    sf.write(q, np.zeros(SR) + 0.001, SR)
+    code, out, _ = _run(["analyze", str(q), str(p)], capsys)
+    assert code == 0
+    lines = out.splitlines()
+    assert len(lines) == 2
+    assert [json.loads(x)["path"] for x in lines] == [str(q.resolve()), str(p.resolve())]
+
+
+def test_analyze_cached_rerun_same_line_no_estimate(fake_beats, capsys):
+    p, calls = fake_beats
+    _, first, _ = _run(["analyze", str(p)], capsys)
+    assert len(calls) == 1
+    code, second, err = _run(["analyze", str(p)], capsys)
+    assert code == 0 and len(calls) == 1
+    assert second == first
+    assert "skip (cached)" in err
+    _run(["analyze", str(p), "--force"], capsys)
+    assert len(calls) == 2
+
+
+def test_analyze_missing_path(fake_beats, cache, capsys):
+    p, _ = fake_beats
+    missing = cache / "nope.wav"
+    code, out, err = _run(["analyze", str(missing), str(p)], capsys)
+    assert code == 1
+    assert "not found" in err and str(missing) in err
+    lines = out.splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["path"] == str(p.resolve())
+
+
+def test_analyze_stdout_has_no_progress(fake_beats, capsys):
+    p, _ = fake_beats
+    _, out1, _ = _run(["analyze", str(p)], capsys)
+    _, out2, _ = _run(["analyze", str(p)], capsys)
+    _, out3, _ = _run(["analyze", str(p), "--force", "--full"], capsys)
+    for out in (out1, out2, out3):
+        for word in ("analyzing", "saved", "skip"):
+            assert word not in out
+        assert all(json.loads(x) for x in out.splitlines())
 
 
 def test_show_unanalyzed_fails(wav, capsys):
