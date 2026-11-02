@@ -70,3 +70,8 @@ def read_metadata(path: str | Path) -> tuple[str, dict]:
             source["suno_id"] = m.group(1)
             break
     return title or Path(path).stem, source
+
+
+def track_dir(tid: str) -> Path:
+    """Per-track artifact directory (stems/, warp/)."""
+    return cache_dir() / tid
