@@ -1,11 +1,12 @@
 """trackprep — CLI entry point (`uv run trackprep <cmd>`).
 
-analyze: 音源を解析して ~/.cache/trackprep/<track_id>.json に保存する。
+analyze: 音源を解析して ~/.cache/trackprep/<track_id>.json に保存し、結果を stdout に JSONL で出す。
 show: 保存済みの解析結果を表示する (--plot で PNG)。
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -17,22 +18,36 @@ def _mmss(t: float) -> str:
     return f"{m}:{s:02d}"
 
 
+# Keys dropped from the default (summary) output; they dominate the payload size.
+_BULKY_KEYS = ("beats", "downbeats", "bars")
+
+
+def _log(msg: str) -> None:
+    print(msg, file=sys.stderr)
+
+
 def cmd_analyze(args) -> int:
+    """Print one JSON line per input on stdout; progress and errors go to stderr."""
     from trackprep.analyze import analyze_file
 
     rc = 0
     for p in args.audio:
         if not Path(p).is_file():
-            print(f"not found: {p}", file=sys.stderr)
+            _log(f"not found: {p}")
             rc = 1
             continue
         tid = store.track_id(p)
-        if store.load(tid) and not args.force:
-            print(f"skip (cached) {tid}  {p}")
-            continue
-        print(f"analyzing {p} ...")
-        out = store.save(analyze_file(p))
-        print(f"saved {out}")
+        data = None if args.force else store.load(tid)
+        if data is not None:
+            _log(f"skip (cached) {tid}  {p}")
+        else:
+            _log(f"analyzing {p} ...")
+            out = store.save(analyze_file(p))
+            _log(f"saved {out}")
+            data = store.load(tid)
+        if not args.full:
+            data = {k: v for k, v in data.items() if k not in _BULKY_KEYS}
+        print(json.dumps(data, ensure_ascii=False))
     return rc
 
 
@@ -122,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
     p_an = sub.add_parser("analyze", help="音源を解析してキャッシュに保存")
     p_an.add_argument("audio", nargs="+")
     p_an.add_argument("--force", action="store_true", help="解析済みでも作り直す")
+    p_an.add_argument("--full", action="store_true", help="beats/downbeats/bars を含む全量を出力")
     p_show = sub.add_parser("show", help="解析結果を表示")
     p_show.add_argument("target", help="音源ファイル or track_id")
     p_show.add_argument("--plot", metavar="PNG", help="3段グラフを PNG で出力")
