@@ -70,6 +70,16 @@ grep -i "RPR_.*Tempo" tmp/reaper/reascripthelp.html
 - `tmp/reaper/` - ReaScript API ドキュメント（git 非追跡）
 - `docs/` - プロジェクトドキュメント
 
+## DJ Mix のツール
+
+1曲単位の下ごしらえは `src/trackprep/`（`cd src/trackprep && uv run trackprep <cmd>`）。
+
+- `analyze <audio...>`: beat / downbeat・テンポ区間・anomaly・展開を解析（JSONL、キャッシュ）
+- `stems <audio...>`: Demucs で drums / bass / other / vocals に分離（CPU で約4分）
+- `warp <audio...> --bpm N [--stems]`: downbeat 基準で一定テンポへ伸縮（4/4、rubberband 必須）
+- `show <audio|track_id>`: 解析結果の表示
+- 境界: 1曲単位は trackprep、複数曲にまたがる判断（曲順・つなぎ）は `mixes/`。詳細は [src/trackprep/README.md](src/trackprep/README.md)
+
 ## VSCode拡張機能
 
 このプロジェクトは `roipoussiere.tidal-strudel` 拡張機能を使用。

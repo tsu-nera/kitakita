@@ -1,6 +1,8 @@
 """trackprep — CLI entry point (`uv run trackprep <cmd>`).
 
 analyze: 音源を解析して ~/.cache/trackprep/<track_id>.json に保存し、結果を stdout に JSONL で出す。
+stems: Demucs で drums/bass/other/vocals に分離してキャッシュする。
+warp: downbeat を基準に一定テンポへ小節ごとに伸縮する (4/4 前提、rubberband CLI が必要)。
 show: 保存済みの解析結果を表示する (--plot で PNG)。
 """
 from __future__ import annotations
@@ -48,6 +50,57 @@ def cmd_analyze(args) -> int:
         if not args.full:
             data = {k: v for k, v in data.items() if k not in _BULKY_KEYS}
         print(json.dumps(data, ensure_ascii=False))
+    return rc
+
+
+def cmd_stems(args) -> int:
+    from trackprep import stems
+
+    rc = 0
+    for p in args.audio:
+        if not Path(p).is_file():
+            _log(f"not found: {p}")
+            rc = 1
+            continue
+        tid = store.track_id(p)
+        if not args.force and stems.cached_stems(tid):
+            _log(f"skip (cached) {tid}  {p}")
+        else:
+            _log(f"separating {p} ({stems.MODEL}, CPU, takes minutes) ...")
+        paths = stems.ensure_stems(p, tid, force=args.force)
+        print(json.dumps({"track_id": tid, "model": stems.MODEL, "stems": paths}, ensure_ascii=False))
+    return rc
+
+
+def cmd_warp(args) -> int:
+    from trackprep import stems, warp
+
+    if not warp.have_rubberband():
+        _log("rubberband CLI not found; install it (e.g. `pacman -S rubberband` / `apt install rubberband-cli`)")
+        return 1
+    rc = 0
+    for p in args.audio:
+        if not Path(p).is_file():
+            _log(f"not found: {p}")
+            rc = 1
+            continue
+        tid = store.track_id(p)
+        paths = None
+        if args.stems:
+            paths = stems.cached_stems(tid)
+            if paths is None:
+                _log(f"no stems for {p}; run first: trackprep stems {p}")
+                rc = 1
+                continue
+        data = store.load(tid)
+        if data is None:
+            from trackprep.analyze import analyze_file
+
+            _log(f"analyzing {p} ...")
+            store.save(analyze_file(p))
+            data = store.load(tid)
+        _log(f"warping {p} -> {args.bpm:.1f} BPM ...")
+        print(json.dumps(warp.run(p, data, args.bpm, paths, force=args.force), ensure_ascii=False))
     return rc
 
 
@@ -138,8 +191,16 @@ def main(argv: list[str] | None = None) -> None:
     p_an.add_argument("audio", nargs="+")
     p_an.add_argument("--force", action="store_true", help="解析済みでも作り直す")
     p_an.add_argument("--full", action="store_true", help="beats/downbeats/bars を含む全量を出力")
+    p_st = sub.add_parser("stems", help="Demucs で STEM 分離してキャッシュ")
+    p_st.add_argument("audio", nargs="+")
+    p_st.add_argument("--force", action="store_true", help="分離済みでもやり直す")
+    p_wp = sub.add_parser("warp", help="downbeat 基準で一定テンポへ伸縮 (4/4 前提)")
+    p_wp.add_argument("audio", nargs="+")
+    p_wp.add_argument("--bpm", type=float, required=True, help="目標 BPM")
+    p_wp.add_argument("--stems", action="store_true", help="分離済みの STEM も同じ写像で伸縮")
+    p_wp.add_argument("--force", action="store_true", help="出力済みでも作り直す")
     p_show = sub.add_parser("show", help="解析結果を表示")
     p_show.add_argument("target", help="音源ファイル or track_id")
     p_show.add_argument("--plot", metavar="PNG", help="3段グラフを PNG で出力")
     args = parser.parse_args(argv)
-    sys.exit({"analyze": cmd_analyze, "show": cmd_show}[args.cmd](args))
+    sys.exit({"analyze": cmd_analyze, "stems": cmd_stems, "warp": cmd_warp, "show": cmd_show}[args.cmd](args))
