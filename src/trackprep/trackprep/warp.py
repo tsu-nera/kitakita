@@ -12,6 +12,7 @@ from trackprep.analyze import find_anomalies
 
 SR = 44100
 MAX_NEIGHBOURS = 8
+PARTIAL_BAR = 0.75
 
 
 def correct_downbeats(beats, downbeats) -> tuple[np.ndarray, list[int]]:
@@ -64,6 +65,21 @@ def correct_downbeats(beats, downbeats) -> tuple[np.ndarray, list[int]]:
         out += [(kept[-1] + j * L, True) for j in range(1, n + 1)]
     times = np.array([t for t, _ in out])
     interp = [i + 1 for i, (_, f) in enumerate(out) if f]
+    return times, interp
+
+
+def trim_partial_bars(times, interp: list[int], ratio: float = PARTIAL_BAR) -> tuple[np.ndarray, list[int]]:
+    """Drop the first/last downbeat if its bar is < `ratio` of the median neighbouring bar length."""
+    times = np.asarray(times, float)
+    interp = list(interp)
+    if len(times) >= 4:
+        lens = np.diff(times)
+        if lens[-1] < ratio * np.median(lens[-1 - MAX_NEIGHBOURS:-1]):
+            times, interp = times[:-1], [i for i in interp if i <= len(times) - 1]
+    if len(times) >= 4:
+        lens = np.diff(times)
+        if lens[0] < ratio * np.median(lens[1:1 + MAX_NEIGHBOURS]):
+            times, interp = times[1:], [i - 1 for i in interp if i > 1]
     return times, interp
 
 
@@ -125,7 +141,7 @@ def run(path: str, data: dict, bpm: float, stems: dict[str, str] | None, force: 
         res["stems"] = {n: str(out_dir / f"{n}.wav") for n in (stems or {})}
         return res
 
-    corrected, interp = correct_downbeats(data["beats"], data["downbeats"])
+    corrected, interp = trim_partial_bars(*correct_downbeats(data["beats"], data["downbeats"]))
     x = _load_stereo(path)
     tmap, d, ratios = build_time_map(corrected, bpm, len(x))
     out_dir.mkdir(parents=True, exist_ok=True)

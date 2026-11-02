@@ -69,6 +69,7 @@ downbeat を基準に1小節ずつ伸縮して、全小節が同じ長さの音�
 - 解析結果が無ければ先に analyze を実行する。`--stems` で STEM が無いと自動では分離せず、`trackprep stems <file>` を案内してその曲は失敗（終了コード 1）。
 - 写像: downbeat `d[k]` → `d[0] + k * BAR`（`BAR = 4*60/bpm`）。最初の downbeat より前は伸縮せず、最後の downbeat より後は最後の小節と同じ比率。mix と各 STEM に同じ写像を使う。44100 Hz・ステレオ・PCM_16。
 - anomaly 区間（`beats` の乱れ、breakdown など）の downbeat は捨て、前後の正常な downbeat の間を周辺の正常な小節長の中央値で等間隔に補間する。曲頭・曲尾にかかる場合は外挿。analyze のキャッシュは書き換えない。
+- 補正後の最後の小節長が周辺の正常な小節長の中央値の 75% 未満なら、最後の downbeat を捨てる（末尾の中途半端な小節。最後の downbeat より後は前の小節と同じ比率で伸ばす）。最初の小節も同じ条件で最初の downbeat を捨てる（最初の downbeat より前は伸縮しない）。捨てた downbeat は `downbeats_src` にも `interpolated_bars` にも入らない。
 - 出力済みなら再計算せず `warp.json` の内容を返す（`--force` で作り直す）。
 
 出力 JSON（入力 1 件につき 1 行）:

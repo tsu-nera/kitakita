@@ -455,3 +455,43 @@ def test_warp_with_stems(cache, monkeypatch, capsys):
     res = json.loads(out)
     assert code == 0 and set(res["stems"]) == set(stems_mod.STEM_NAMES)
     assert all(Path(v).is_file() for v in res["stems"].values())
+
+
+def test_build_time_map_points_on_grid():
+    _, down = ramp_beats(138, 146)
+    n = int((down[-1] + 2) * WSR)
+    tmap, d, ratios = warp_mod.build_time_map(down, 142, n)
+    bar = 4 * 60 / 142 * WSR
+    assert tmap[0] == (0, 0) and tmap[-1][0] == n
+    assert [t[0] for t in tmap[1:-1]] == list(d) and len(d) == 16
+    for k, (src, dst) in enumerate(tmap[1:-1]):
+        assert abs(dst - (d[0] + k * bar)) <= 1
+    assert abs(tmap[-1][1] - (tmap[-2][1] + (n - d[-1]) * ratios[-1])) <= 1
+    assert all(a < b for a, b in zip(tmap, tmap[1:]))
+
+
+def test_build_time_map_first_downbeat_at_zero():
+    tmap, d, _ = warp_mod.build_time_map([0.0, 1.7, 3.4], 142, 44100 * 5)
+    assert tmap[0] == (0, 0) and tmap[1][0] > 0
+
+
+def test_trim_partial_bars():
+    t = np.arange(10) * 1.7
+    t = np.concatenate([[t[0] - 0.8], t, [t[-1] + 0.8]])
+    out, interp = warp_mod.trim_partial_bars(t, [5])
+    assert np.allclose(out, np.arange(10) * 1.7) and interp == [4]
+    out, interp = warp_mod.trim_partial_bars(np.arange(10) * 1.7, [])
+    assert len(out) == 10
+
+
+@needs_rubberband
+def test_warp_drops_trailing_partial_bar(cache, monkeypatch, capsys):
+    beats, down = grid_bars([0.4] * 16)
+    down = np.append(down, beats[62])  # spurious downbeat: the last bar is only 2 beats long
+    assert len(down) == 17
+    p = put_audio(cache, "tail.wav", render_clicks(down), beats, down, monkeypatch)
+    code, out, _ = _run(["warp", str(p), "--bpm", "142"], capsys)
+    res = json.loads(out)
+    assert code == 0 and len(res["downbeats_src"]) == 16
+    assert abs(res["max_stretch"] - abs(150 / 142 - 1)) < 0.001
+    assert res["interpolated_bars"] == []
