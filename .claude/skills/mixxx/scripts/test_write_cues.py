@@ -37,6 +37,25 @@ def test_write_replaces_hotcues_only(tmp_path):
     assert con.execute("select position, label from cues where type = 2").fetchall() == [(222, "main")]
 
 
+def test_write_intro_outro_markers_replace_existing(tmp_path):
+    db = make_db(tmp_path / "m.sqlite")
+    con = sqlite3.connect(db)
+    con.execute("insert into cues (track_id, type, position, length) values (10, 6, 702, 0)")
+    con.execute("insert into cues (track_id, type, position, length) values (10, 7, -1, 999)")
+    wc.write(con, Path("/music/a.mp3"), [(1.0, "drop 5")], {"intro": (0.0, 27.0), "outro": (240.0, 270.0)})
+    rows = con.execute("select type, position, length, hotcue from cues where type in (6, 7) order by type").fetchall()
+    assert rows == [(6, 0.0, 27.0 * SR * 2, -1), (7, 240.0 * SR * 2, 30.0 * SR * 2, -1)]
+    assert con.execute("select position, label from cues where type = 2").fetchall() == [(222, "main")]
+
+
+def test_write_without_markers_keeps_intro_outro(tmp_path):
+    db = make_db(tmp_path / "m.sqlite")
+    con = sqlite3.connect(db)
+    con.execute("insert into cues (track_id, type, position, length) values (10, 6, 702, 0)")
+    wc.write(con, Path("/music/a.mp3"), [(1.0, "drop 5")])
+    assert con.execute("select position, length from cues where type = 6").fetchall() == [(702, 0)]
+
+
 def test_write_unknown_track_is_noop(tmp_path):
     con = sqlite3.connect(make_db(tmp_path / "m.sqlite"))
     wc.write(con, Path("/music/zzz.mp3"), [(1.0, "intro 1")])

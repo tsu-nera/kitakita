@@ -3,10 +3,12 @@
 usage:
   python -I write_cues.py [--db <path>] <audio>...                      # sections of each file's own analysis
   python -I write_cues.py [--db <path>] --warp <orig> <bpm> <warped>    # orig's sections mapped onto its warp output
-  python -I write_cues.py [--db <path>] --json <x.cues.json>...         # {"wav": path, "cues": [[sec, label], ...]}
+  python -I write_cues.py [--db <path>] --json <x.cues.json>...         # {"wav": path, "cues": [[sec, label], ...],
+                                                                       #  optional "intro"/"outro": [start_sec, end_sec]}
 --db defaults to ~/.mixxx/mixxxdb.sqlite. The "Mixxx is running" check applies only to that default DB;
 a copy given via --db may be written while Mixxx runs.
-Replaces all existing hotcues (type 1) of each track; main cue / intro / outro / N60dB rows are left to Mixxx.
+Replaces all existing hotcues (type 1) of each track; main cue / N60dB rows are left to Mixxx.
+intro / outro markers (type 6 / 7) are replaced only when the JSON gives them (position = start, length = end - start).
 position unit = interleaved stereo samples (frames * 2) at library.samplerate (see memory mixxx-cue-db-format).
 """
 import hashlib
@@ -21,6 +23,7 @@ from pathlib import Path
 DB = Path.home() / ".mixxx/mixxxdb.sqlite"  # default (real) DB
 CACHE = Path.home() / ".cache/trackprep"
 HOTCUE = 1
+MARKER_TYPES = {"intro": 6, "outro": 7}
 COLORS = {"intro": 0x0088FF, "groove": 0x32BE44, "break": 0xF8D200, "breakdown": 0xAF00CC, "drop": 0xE10000}
 
 
@@ -51,7 +54,7 @@ def warp_cues(orig: Path, bpm: float) -> list[tuple[float, str]]:
     return out
 
 
-def write(con, path: Path, cues: list[tuple[float, str]]) -> None:
+def write(con, path: Path, cues: list[tuple[float, str]], markers: dict | None = None) -> None:
     row = con.execute(
         "select li.id, li.samplerate from library li join track_locations l on l.id = li.location where l.location = ?",
         (str(path),),
@@ -69,6 +72,14 @@ def write(con, path: Path, cues: list[tuple[float, str]]) -> None:
         )
         print(f"  {path.name}: hotcue {i + 1:2d} {t:7.2f}s  {label}")
     print(f"{path.name}: removed {n} hotcues, wrote {len(cues)}")
+    for name, (start, end) in (markers or {}).items():
+        typ = MARKER_TYPES[name]
+        con.execute("delete from cues where track_id = ? and type = ?", (lib_id, typ))
+        con.execute(
+            "insert into cues (track_id, type, position, length, hotcue, label) values (?, ?, ?, ?, -1, '')",
+            (lib_id, typ, start * sr * 2, (end - start) * sr * 2),
+        )
+        print(f"  {path.name}: {name} marker {start:7.2f}s - {end:7.2f}s")
 
 
 def mixxx_running() -> bool:
@@ -92,18 +103,19 @@ def main(argv: list[str]) -> None:
         db, argv = Path(argv[1]), argv[2:]
     if argv[:1] == ["--warp"]:
         orig, bpm, target = Path(argv[1]).resolve(), float(argv[2]), Path(argv[3]).resolve()
-        jobs = [(target, warp_cues(orig, bpm))]
+        jobs = [(target, warp_cues(orig, bpm), None)]
     elif argv[:1] == ["--json"]:
         jobs = []
         for p in argv[1:]:
             j = json.loads(Path(p).read_text())
-            jobs.append((Path(j["wav"]).resolve(), [(float(t), label) for t, label in j["cues"]]))
+            markers = {k: (float(j[k][0]), float(j[k][1])) for k in MARKER_TYPES if k in j}
+            jobs.append((Path(j["wav"]).resolve(), [(float(t), label) for t, label in j["cues"]], markers))
     else:
-        jobs = [(Path(p).resolve(), own_cues(Path(p).resolve())) for p in argv]
+        jobs = [(Path(p).resolve(), own_cues(Path(p).resolve()), None) for p in argv]
     con = open_db(db)
     with con:
-        for path, cues in jobs:
-            write(con, path, cues)
+        for path, cues, markers in jobs:
+            write(con, path, cues, markers)
 
 
 if __name__ == "__main__":
