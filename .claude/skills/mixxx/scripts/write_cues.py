@@ -3,6 +3,7 @@
 usage:
   python -I write_cues.py [--db <path>] <audio>...                      # sections of each file's own analysis
   python -I write_cues.py [--db <path>] --warp <orig> <bpm> <warped>    # orig's sections mapped onto its warp output
+  python -I write_cues.py [--db <path>] --json <x.cues.json>...         # {"wav": path, "cues": [[sec, label], ...]}
 --db defaults to ~/.mixxx/mixxxdb.sqlite. The "Mixxx is running" check applies only to that default DB;
 a copy given via --db may be written while Mixxx runs.
 Replaces all existing hotcues (type 1) of each track; main cue / intro / outro / N60dB rows are left to Mixxx.
@@ -92,6 +93,11 @@ def main(argv: list[str]) -> None:
     if argv[:1] == ["--warp"]:
         orig, bpm, target = Path(argv[1]).resolve(), float(argv[2]), Path(argv[3]).resolve()
         jobs = [(target, warp_cues(orig, bpm))]
+    elif argv[:1] == ["--json"]:
+        jobs = []
+        for p in argv[1:]:
+            j = json.loads(Path(p).read_text())
+            jobs.append((Path(j["wav"]).resolve(), [(float(t), label) for t, label in j["cues"]]))
     else:
         jobs = [(Path(p).resolve(), own_cues(Path(p).resolve())) for p in argv]
     con = open_db(db)

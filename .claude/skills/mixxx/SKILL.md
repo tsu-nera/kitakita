@@ -15,12 +15,13 @@ Mixxx は起動中の状態を終了時に DB へ書き戻すので、起動中�
 
 ## cue を書く
 
-trackprep のキャッシュ（`~/.cache/trackprep/`）の `sections` からラベル付きホットキューを作る。上記の手順（起動チェック + バックアップ）は `write_cues.py` が実 DB に対して自動で行う。
+ラベル付きホットキューを書く。入力は trackprep のキャッシュ（`~/.cache/trackprep/`）の `sections` か、任意の秒とラベルを並べた JSON。上記の手順（起動チェック + バックアップ）は `write_cues.py` が実 DB に対して自動で行う。
 
 ```bash
 cd .claude/skills/mixxx/scripts
 python -I write_cues.py [--db <path>] <audio>...                    # 各ファイル自身の解析
 python -I write_cues.py [--db <path>] --warp <orig> <bpm> <warped>  # orig の sections を warp 出力へ写す
+python -I write_cues.py [--db <path>] --json <x.cues.json>...       # {"wav": path, "cues": [[sec, label], ...]}
 ```
 
 - 対象曲の hotcue（type 1）は全部消して入れ直す。main cue / intro / outro / N60dB は触らない。
