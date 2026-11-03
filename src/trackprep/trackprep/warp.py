@@ -26,7 +26,8 @@ def correct_downbeats(beats, downbeats) -> tuple[np.ndarray, list[int]]:
     if not runs or len(downbeats) < 2:
         return downbeats, []
     spans = [(beats[a], beats[min(b + 1, len(beats) - 1)]) for a, b in runs]
-    inside = np.array([any(t0 < d < t1 for t0, t1 in spans) for d in downbeats])
+    # endpoints count: a spurious downbeat sits exactly on a beat that bounds the bad interval
+    inside = np.array([any(t0 <= d <= t1 for t0, t1 in spans) for d in downbeats])
     kept = downbeats[~inside]
     dropped = downbeats[inside]
     if len(kept) < 2:
