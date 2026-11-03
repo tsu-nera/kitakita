@@ -178,3 +178,28 @@ sudo pacman -S pipewire-jack   # jack2 の削除を促されたら yes
 | `kita/` | ライブラリ + CLI |
 | `samples/` | 合成サンプル生成（wav は git 管理外） |
 | `output/` | 生成 MIDI（git 管理外） |
+
+## ドキュメント検索（REAPER / reapy）
+
+REAPER の関数・API について質問されたら、**Web検索でなくローカルを検索**してください。
+GUI 操作を尋ねられても、まず reapy / ReaScript API で code-driven 化できないか先に当たる（Issue #8 方針、上位互換）。
+真に GUI しか手段が無い操作だけ、公式ユーザーガイド <https://www.reaper.fm/userguide.php> を必要箇所だけ参照する（全文のローカル整備はしない）。
+
+### 検索場所（優先度順）
+
+| 層 | 検索場所 |
+|----|---------|
+| reapy-next / isobar / mido / reathon の API（最頻出） | `src/reaper-python/.venv/lib/python3.12/site-packages/{reapy,isobar,mido,reathon}/` |
+| ReaScript API（reapy が薄く下層 `RPR_*` を直接呼ぶとき） | `tmp/reaper/reascripthelp.html` |
+
+### 検索コマンド例
+
+```bash
+# reapy のメソッドを探す（例: add_track）
+grep -rn "def add_track" src/reaper-python/.venv/lib/python3.12/site-packages/reapy/
+
+# ReaScript API を探す（例: tempo 関連の RPR_ 関数）
+grep -i "RPR_.*Tempo" tmp/reaper/reascripthelp.html
+```
+
+> MCP は導入しない。reapy 接続（`reapy.configure_reaper()` 設定済み）を直接叩くのが上位互換のため（Issue #8）。

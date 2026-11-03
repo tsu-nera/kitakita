@@ -1,74 +1,16 @@
 # Claude Code 設定
 
-このプロジェクトはStrudel（ライブコーディング音楽環境）を使った音楽制作環境です。
+音楽制作の実験を置く repo。プロジェクトごとに道具が違うので、手順は各 README にある。
 
-## Strudelドキュメント検索
+## プロジェクト
 
-Strudelの関数・文法について質問されたら、**Web検索ではなくローカルドキュメントを検索**してください。
+| 状態 | 場所 | 内容 |
+|------|------|------|
+| 現役 | `src/trackprep/`, `mixes/` | Suno 曲の DJ Mix（下記） |
+| 休止中（再開未定） | `src/reaper-python/` | kita: song.py（Python DSL）→ MIDI / sim 合成。REAPER 連携は 2026-09 に離脱決定。[README](src/reaper-python/README.md)（REAPER / reapy の検索手順も） |
+| 休止中 | `src/strudel/`, `src/tidal/` | Strudel / Tidal のライブコーディング。[README](src/strudel/README.md)（ドキュメント検索・VSCode 拡張・サンプル） |
 
-### 検索場所
-
-```
-tmp/strudel/website/src/pages/
-```
-
-### 検索コマンド例
-
-```bash
-# 関数名で検索（例: fit）
-grep -r "\.fit\(" tmp/strudel/website/src/pages/
-
-# トピックで検索（例: duck）
-grep -r "duck" tmp/strudel/website/src/pages/learn/
-```
-
-### 主要ファイル
-
-| トピック | ファイル |
-|---------|---------|
-| サンプル操作 (fit, loopAt, chop) | `learn/samples.mdx` |
-| エフェクト | `learn/effects.mdx` |
-| シンセ | `learn/synths.mdx` |
-| ミニノーテーション | `learn/mini-notation.mdx` |
-| スケール・音階 | `learn/tonal.mdx` |
-| 時間操作 | `learn/time-modifiers.mdx` |
-| レシピ・実践例 | `recipes/recipes.mdx` |
-
-## REAPERドキュメント検索
-
-`src/reaper-python/` はコード駆動。正本は `song.py`（Python DSL）で、`uv run kita <cmd>`
-（compose/sync/load/check 等）が MIDI 生成・reapy での REAPER 反映・オフライン計測を行う。
-詳細は `src/reaper-python/README.md`。
-REAPER の関数・API について質問されたら、**Web検索でなくローカルを検索**してください。
-GUI 操作を尋ねられても、まず reapy / ReaScript API で code-driven 化できないか先に当たる（Issue #8 方針、上位互換）。
-真に GUI しか手段が無い操作だけ、公式ユーザーガイド <https://www.reaper.fm/userguide.php> を必要箇所だけ参照する（全文のローカル整備はしない）。
-
-### 検索場所（優先度順）
-
-| 層 | 検索場所 |
-|----|---------|
-| reapy-next / isobar / mido / reathon の API（最頻出） | `src/reaper-python/.venv/lib/python3.12/site-packages/{reapy,isobar,mido,reathon}/` |
-| ReaScript API（reapy が薄く下層 `RPR_*` を直接呼ぶとき） | `tmp/reaper/reascripthelp.html` |
-
-### 検索コマンド例
-
-```bash
-# reapy のメソッドを探す（例: add_track）
-grep -rn "def add_track" src/reaper-python/.venv/lib/python3.12/site-packages/reapy/
-
-# ReaScript API を探す（例: tempo 関連の RPR_ 関数）
-grep -i "RPR_.*Tempo" tmp/reaper/reascripthelp.html
-```
-
-> MCP は導入しない。reapy 接続（`reapy.configure_reaper()` 設定済み）を直接叩くのが上位互換のため（Issue #8）。
-
-## プロジェクト構成
-
-- `src/strudel/` - Strudelパターンファイル (.str)
-- `src/reaper-python/` - pure Python + REAPER ワークフロー（song.py 正本 + kita CLI）
-- `tmp/strudel/` - Strudelリポジトリ（ドキュメント参照用、git 非追跡）
-- `tmp/reaper/` - ReaScript API ドキュメント（git 非追跡）
-- `docs/` - プロジェクトドキュメント
+休止中のプロジェクトに触れるときは、まずその README を読む。`docs/adr/` は kita、`docs/*STRUDEL*.md` は Strudel のもの。
 
 ## DJ Mix のツール
 
@@ -79,21 +21,7 @@ grep -i "RPR_.*Tempo" tmp/reaper/reascripthelp.html
 - `warp <audio...> --bpm N [--stems]`: downbeat 基準で一定テンポへ伸縮（4/4、rubberband 必須）
 - `show <audio|track_id>`: 解析結果の表示
 - 境界: 1曲単位は trackprep、複数曲にまたがる判断（曲順・つなぎ）は `mixes/`。詳細は [src/trackprep/README.md](src/trackprep/README.md)
-
-## VSCode拡張機能
-
-このプロジェクトは `roipoussiere.tidal-strudel` 拡張機能を使用。
-カスタムビルドの詳細は [docs/VSCODE_STRUDEL.md](docs/VSCODE_STRUDEL.md) を参照。
-
-## 利用可能なサンプル
-
-dough-samplesをオンライン読み込み設定済み：
-- tidal-drum-machines (bd, sd, hh, oh, cp)
-- piano
-- Dirt-Samples
-- EmuSP12
-- VCSL
-- mridangam
+- データ（原曲・編集物・実験物）の置き場所は [mixes/README.md](mixes/README.md)
 
 ## 用語
 
