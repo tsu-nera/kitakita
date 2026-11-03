@@ -362,6 +362,17 @@ def test_correct_downbeats_fills_gap_and_tail():
     assert interp and abs(out[-1] - down[-1]) < 0.02 and np.allclose(np.diff(out), bar, atol=1e-6)
 
 
+def test_correct_downbeats_drops_spurious_downbeat_on_anomaly_edge():
+    # Seen on a real track: an extra beat+downbeat 0.1 s after a true downbeat. Both downbeats are the
+    # endpoints of the bad interval, so an open-interval check kept them and warp stretched 0.1 s to a bar.
+    beats, down = grid_bars([0.43] * 16)
+    bar = 4 * 0.43
+    extra = down[8] + 0.1
+    out, interp = warp_mod.correct_downbeats(np.sort(np.append(beats, extra)), np.sort(np.append(down, extra)))
+    assert np.min(np.diff(out)) > 0.75 * bar
+    assert len(out) == 16 and np.allclose(out, down, atol=1e-6)
+
+
 @needs_rubberband
 def test_warp_ramp_tempo_clicks_on_grid(cache, monkeypatch, capsys):
     beats, down = ramp_beats(138, 146)
