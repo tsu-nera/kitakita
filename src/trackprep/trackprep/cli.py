@@ -28,8 +28,16 @@ def _log(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
+def _add_drum_kicks(data: dict, drums_wav: str) -> None:
+    from trackprep import drums
+
+    drums.add_drum_kicks(data, drums_wav)
+    store.save(data)
+
+
 def cmd_analyze(args) -> int:
     """Print one JSON line per input on stdout; progress and errors go to stderr."""
+    from trackprep import stems
     from trackprep.analyze import analyze_file
 
     rc = 0
@@ -47,6 +55,8 @@ def cmd_analyze(args) -> int:
             out = store.save(analyze_file(p))
             _log(f"saved {out}")
             data = store.load(tid)
+        if "drum_kicks" not in data["bars"][0] and (paths := stems.cached_stems(tid)):
+            _add_drum_kicks(data, paths["drums"])
         if not args.full:
             data = {k: v for k, v in data.items() if k not in _BULKY_KEYS}
         print(json.dumps(data, ensure_ascii=False))
@@ -68,6 +78,11 @@ def cmd_stems(args) -> int:
         else:
             _log(f"separating {p} ({stems.MODEL}, CPU, takes minutes) ...")
         paths = stems.ensure_stems(p, tid, force=args.force)
+        data = store.load(tid)
+        if data is None:
+            _log(f"no analysis for {p}; run first: trackprep analyze {p}")
+        else:
+            _add_drum_kicks(data, paths["drums"])
         print(json.dumps({"track_id": tid, "model": stems.MODEL, "stems": paths}, ensure_ascii=False))
     return rc
 
@@ -137,9 +152,13 @@ def _print_show(data: dict) -> None:
         last = s["to_bar"]
         t1 = _bar_time(data, last + 1) if last < len(data["bars"]) else data["duration"]
         print(f" {s['label']:<10} {s['from_bar']:3d}-{s['to_bar']:3d}  {_mmss(t0)}-{_mmss(t1)}")
-    print("\nbar  time    rms   low  high  kick")
+    has_drums = "drum_kicks" in data["bars"][0]
+    print("\nbar  time    rms   low  high  kick" + (" dkick 4otf" if has_drums else ""))
     for b in data["bars"]:
-        print(f"{b['bar']:3d} {b['time']:7.2f}  {b['rms']:.2f}  {b['low']:.2f}  {b['high']:.2f} {b['kick']:5.1f}")
+        line = f"{b['bar']:3d} {b['time']:7.2f}  {b['rms']:.2f}  {b['low']:.2f}  {b['high']:.2f} {b['kick']:5.1f}"
+        if has_drums:
+            line += f" {b['drum_kicks']:5d} {'yes' if b['four_on_floor'] else '-':>4}"
+        print(line)
 
 
 def _plot(data: dict, out: str) -> None:
