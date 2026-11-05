@@ -49,7 +49,7 @@ uv run trackprep analyze a.mp3 | jq .tempo_segments
 | `beats`, `downbeats` | 秒の配列 |
 | `tempo_segments` | `from_bar`, `to_bar`, `bpm_start`, `bpm_end`。拍間隔の異常点で切り、32拍窓の BPM が 1.0 以上動く所でも切る |
 | `anomalies` | 拍間隔が中央値の 0.5 倍未満 / 1.5 倍超の箇所（`bar`, `time`, `kind: beat_irregular`）。連続分は1件にまとめる |
-| `bars` | 小節ごとの `bar`, `time`, `rms`, `low`(40-100Hz), `high`(6kHz 以上), `kick`。rms/low/high は完全な小節（拍数が最頻値の小節）の p95 で割り [0,1] に clip |
+| `bars` | 小節ごとの `bar`, `time`, `rms`, `low`(40-100Hz), `high`(6kHz 以上), `kick`。rms/low/high は完全な小節（拍数が最頻値の小節）の p95 で割り [0,1] に clip。stem がキャッシュにあるときだけ `drum_kicks`（int, キックありの拍数）と `four_on_floor`（bool）が付く。判定は drums stem の 40-120 Hz（zero-phase の band-pass）を拍ごとに見て（拍の -15〜+50 ms のピーク）、全拍の p90 − 15 dB 以上ならキックあり。`four_on_floor` は拍数 4 の小節で 4 拍すべてにキックがある場合 |
 | `phrase_offset_bar` | 8小節 phrase の起点小節（1〜8）。低域の変化が最も揃う起点 |
 | `sections` | phrase 単位の推定区間 `label`, `from_bar`, `to_bar`。ラベルは `intro` / `breakdown` / `break` / `groove` / `drop` |
 | `ending` | `kind`（`abrupt` / `fade`）と `decay_sec`。最後の大音量から -40dB まで 5 秒未満なら `abrupt` |
@@ -58,6 +58,7 @@ uv run trackprep analyze a.mp3 | jq .tempo_segments
 ## stems
 
 - 入力 1 件につき JSON 1 行: `{"track_id", "model": "htdemucs", "stems": {"drums": "<path>", ...}}`。分離済みなら飛ばす（`--force` でやり直す）。WAV は PCM_16。
+- 解析キャッシュがあれば `bars[]` に `drum_kicks` / `four_on_floor` を書き足す（分離済みで飛ばした場合も）。解析キャッシュが無ければ stderr に `trackprep analyze` を案内するが、分離は成功扱い。analyze は stem があれば同じ項目を付ける。`show` は付いている曲だけ `dkick` / `4otf` 列を出す。
 - 進捗・エラーは stderr、終了コードは analyze と同じ。
 
 ## warp
