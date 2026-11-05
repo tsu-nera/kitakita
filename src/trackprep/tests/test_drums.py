@@ -44,6 +44,17 @@ def test_bar_kicks_incomplete_bars_are_not_four_on_floor():
     assert [r["four_on_floor"] for r in rows] == [False, True, True, True, True, False]
 
 
+def test_bar_kicks_tolerates_kicks_after_beat_times():
+    # beat trackers place beats slightly before the kick attack (about +38 ms on a real Suno track)
+    # and by different amounts; on-time kicks set the reference, late ones must still count
+    beats, downbeats = beat_times([(140, 8)])
+    late = np.arange(len(beats)) >= 16
+    early, delayed = render(beats, ~late), render(beats + 0.045, late)
+    y = delayed + np.pad(early, (0, len(delayed) - len(early)))
+    rows = drums_mod.bar_kicks(y, SR, beats, downbeats)
+    assert [r["drum_kicks"] for r in rows[:-1]] == [4] * 7
+
+
 def _put_drums(p, y):
     d = stems_mod.stems_dir(store.track_id(p))
     d.mkdir(parents=True, exist_ok=True)

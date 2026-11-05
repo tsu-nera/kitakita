@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import butter, sosfilt
+from scipy.signal import butter, sosfiltfilt
 
 KICK_BAND = (40, 120)  # Hz
 WIN = (-0.015, 0.050)  # s around each beat
@@ -20,7 +20,8 @@ def bar_kicks(y: np.ndarray, sr: int, beats: np.ndarray, downbeats: np.ndarray) 
     if y.ndim == 2:
         y = y.mean(axis=1)
     sos = butter(4, KICK_BAND, btype="bandpass", fs=sr, output="sos")
-    env = np.abs(sosfilt(sos, y))
+    # zero-phase: beat times tend to precede the kick, and a causal IIR's low-band group delay would push peaks out of WIN
+    env = np.abs(sosfiltfilt(sos, y))
     peaks = np.empty(len(beats))
     for i, b in enumerate(beats):
         s = max(int(round((b + WIN[0]) * sr)), 0)
