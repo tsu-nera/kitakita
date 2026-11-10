@@ -10,7 +10,8 @@
 ~/Music/kitakita/
   tracks/<タイトル>_<suno_id 先頭8桁>/   1曲1フォルダ（同名タイトルの別生成と衝突しないよう suno_id を付ける）
     <タイトル>.mp3     原曲。読み取り専用（chmod a-w）
-    structure.md       区間・層・本人の判断（誰がいつ決めたか）・気づき
+    structure.yaml     区間（隙間なく覆う）・役割・層・誰がいつ決めたか・気づき・edit の評価
+    edits/<edit>.arrangement.md   edit の小節 → 原曲の小節と役割の対応表（render.py が書く）
     measure/           その場で測った結果。画面に出すだけで終わらせず、ファイルで残す
     re-edit.yaml       re-edit の plan
     edits/             書き出した edit と <edit>.cues.json
