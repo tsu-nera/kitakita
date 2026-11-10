@@ -21,7 +21,7 @@
 - `warp <audio...> --bpm N [--stems]`: downbeat 基準で一定テンポへ伸縮（4/4、rubberband 必須）
 - `show <audio|track_id>`: 解析結果の表示
 - 境界: 1曲単位は trackprep、複数曲にまたがる判断（曲順・つなぎ）は `mixes/`。詳細は [src/trackprep/README.md](src/trackprep/README.md)
-- データ（曲・判断・plan・edit）は `~/Music/suno/` に1曲1フォルダで置く。構成は [mixes/README.md](mixes/README.md)
+- データ（曲・判断・plan・edit）は `~/Music/kitakita/` に1曲1フォルダで置く。構成は [mixes/README.md](mixes/README.md)
 
 ## 用語
 
