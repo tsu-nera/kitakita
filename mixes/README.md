@@ -25,4 +25,24 @@
 | 派生物（解析・stem・warp） | `~/.cache/trackprep/` | track_id は原曲の内容のハッシュなので、原曲を移動しても引ける |
 | 実験スクリプト・試聴クリップ | repo の `tmp/djmix/` | git 非追跡。方式が固まったら trackprep へ昇格 |
 
+## re-edit の型
+
+Suno の曲はトランスの音色でポップスの形（キックの無い intro、短い break の繰り返し、テンポが崩れる締め）になりやすい。re-edit は原曲の区間を次の枠に当てはめる。既定であって、曲の持ち味は耳で判断して残す（2026-11-11、2曲の観察から。5曲ほどで見直す）。
+
+| 枠 | 小節 | 中身 |
+|---|---|---|
+| drum intro | 16 | ドラムだけ（mix in。Mixxx の intro マーカー） |
+| intro | 16（前後数小節は可） | 原曲の intro ＋ 下にドラム。メロディのフレーズの頭に合わせる |
+| groove | 16〜32 | 4つ打ちの groove・verse |
+| breakdown（短） | 8 | 任意 |
+| drop 1 | 16 | |
+| main breakdown | 16 以上 | build-up を含む |
+| drop 2 | 16 | サビを含んでよい |
+| 最後の drop | 8〜16 | 任意 |
+| outro | 16 | 上物を少しずつ抜き、ドラムが残る（mix out。outro マーカー） |
+
+- break（8小節以上）は最大2回（短 1 ＋ main 1）。3回以上あれば、つなげるか削る
+- 捨てる: ポップスの締め（テンポが崩れる部分と、その前打ち）
+- ループで小節を足すときは、締めへの前打ちを含む小節をフレーズの最後にだけ置く
+
 Mixxx はパスで曲を管理する。曲を移すときは Mixxx を閉じ、`~/.mixxx/mixxxdb.sqlite` の `track_locations.location`/`directory` も書き換える（キューを保つため）。
