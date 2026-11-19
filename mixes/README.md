@@ -53,13 +53,13 @@ Suno の曲はトランスの音色でポップスの形（キックの無い in
 
 ```yaml
 fx:
-  - {name: riser, synth: riser, bars: 8, bar: 35, align: end, gain_db: -6}   # f0/f1 (Hz)・seed も指定可
+  - {name: riser, synth: riser, bars: 8, bar: 35, align: end, resonance: 0.7, gain_db: -4}   # f0/f1 (Hz)・seed も指定可
   - {name: crash, file: ~/path/crash.wav, bar: 35, gain_db: -3}
-  - {name: rev, file: ~/path/crash.wav, reverse: true, bar: 59, align: end}  # reverse cymbal
+  - {name: rev, file: ~/path/reverse_cymbal.wav, bar: 59, align: peak}  # reverse cymbal
 throw:   # 位置を覆う layer の原曲から stem の beats 拍を取り、delay の wet だけを足す
   - {name: echo, stem: vocals, bar: 50, beat: 4, beats: 1, delay_beats: 0.75, feedback: 0.45, tail_bars: 4}
 ```
 
-`align: end` は素材の末尾を指定位置に合わせる。`synth` は `riser` / `downlifter`（ステレオ noise の LPF スイープ）。`.arrangement.md` に `## transition FX` の一覧が付く。
+`align: end` は素材の末尾を、`align: peak` は音量のピークを指定位置に合わせる。Black Octopus Trance Vision の reverse cymbal は25本中24本がピークを途中（多くは真ん中: swell → crash → 減衰）に持つので `peak` で置く。`resonance`（既定 0.2）を上げると cutoff の動きが聞こえやすい。`synth` は `riser` / `downlifter`（ステレオ noise の LPF スイープ）。`.arrangement.md` に `## transition FX` の一覧が付く。
 
 Mixxx はパスで曲を管理する。曲を移すときは Mixxx を閉じ、`~/.mixxx/mixxxdb.sqlite` の `track_locations.location`/`directory` も書き換える（キューを保つため）。

@@ -13,7 +13,8 @@ import soxr
 BLOCK = 512  # samples per static-cutoff block of the swept filter
 SYNTH_PEAK_DB = -6  # synth FX are normalized here before gain_db, so gain_db is predictable
 CEILING_DB = -1.0  # peak ceiling of the rendered A/B pair
-DEFAULT_SWEEP = {"riser": (300.0, 12000.0), "downlifter": (12000.0, 300.0)}
+RESONANCE = 0.2  # LadderFilter resonance of the synth sweep (0..1)
+DEFAULT_SWEEP ={"riser": (300.0, 12000.0), "downlifter": (12000.0, 300.0)}
 
 
 def position(bar: float, beat: float, bar_samples: float) -> int:
@@ -21,10 +22,17 @@ def position(bar: float, beat: float, bar_samples: float) -> int:
     return int(round((bar - 1 + (beat - 1) / 4) * bar_samples))
 
 
-def place(dst: np.ndarray, x: np.ndarray, pos: int, align: str = "start") -> None:
-    """Add x into dst; align 'start' puts x[0] at pos, 'end' puts x[-1] at pos - 1 (the material ends on pos)."""
-    assert align in ("start", "end"), f"align must be start|end, got {align}"
-    s = pos if align == "start" else pos - len(x)
+def peak_index(x: np.ndarray, sr: int = 48000) -> int:
+    """Index of the loudest point of a 10 ms smoothed envelope (the crest of a reverse cymbal)."""
+    w = max(1, int(0.01 * sr))
+    return int(np.convolve(np.abs(x).max(axis=1), np.ones(w) / w, "same").argmax())
+
+
+def place(dst: np.ndarray, x: np.ndarray, pos: int, align: str = "start", sr: int = 48000) -> None:
+    """Add x into dst; align 'start' puts x[0] at pos, 'end' puts x[-1] at pos - 1 (the material ends on pos),
+    'peak' puts the envelope's loudest point at pos (reverse cymbals whose crest sits mid-file)."""
+    assert align in ("start", "end", "peak"), f"align must be start|end|peak, got {align}"
+    s = pos if align == "start" else pos - len(x) if align == "end" else pos - peak_index(x, sr)
     a, b = max(s, 0), min(s + len(x), len(dst))
     if (a, b) != (s, s + len(x)):
         print(f"  warning: FX clipped by the edit boundary ({s} .. {s + len(x)} of {len(dst)})")
@@ -42,12 +50,14 @@ def load_oneshot(path: str | Path, sr: int, reverse: bool = False) -> np.ndarray
     return x[::-1].copy() if reverse else x
 
 
-def synth(kind: str, n: int, sr: int, f0: float | None = None, f1: float | None = None, seed: int = 0) -> np.ndarray:
-    """Stereo noise sweep. L and R use independent noise (mono would lose the width). Deterministic for a given seed."""
+def synth(kind: str, n: int, sr: int, f0: float | None = None, f1: float | None = None, seed: int = 0,
+          resonance: float = RESONANCE) -> np.ndarray:
+    """Stereo noise sweep. L and R use independent noise (mono would lose the width). Deterministic for a given seed.
+    Higher resonance makes the moving cutoff audible as a pitch-like whistle."""
     d0, d1 = DEFAULT_SWEEP[kind]
     f0, f1 = f0 or d0, f1 or d1
     noise = np.stack([np.random.default_rng(seed).standard_normal(n), np.random.default_rng(seed + 1).standard_normal(n)])
-    lpf = pb.LadderFilter(mode=pb.LadderFilter.Mode.LPF24, cutoff_hz=f0, resonance=0.2)
+    lpf = pb.LadderFilter(mode=pb.LadderFilter.Mode.LPF24, cutoff_hz=f0, resonance=resonance)
     y = np.empty_like(noise, dtype=np.float32)
     for i in range(0, n, BLOCK):
         t = (i + min(BLOCK, n - i) / 2) / n

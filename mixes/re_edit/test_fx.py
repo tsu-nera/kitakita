@@ -40,6 +40,16 @@ def test_place_start_and_end():
     assert dst[pos - 1, 0] == 0.5 and dst[pos - 1000, 0] == 1.0  # the last sample lands just before pos
 
 
+def test_place_peak():
+    # swell up to a crest at 60% of the file, then decay: the crest lands on pos
+    n = 10000
+    env = np.concatenate([np.linspace(0, 1, 6000), np.linspace(1, 0, n - 6000)])
+    pos = fx.position(3, 1, BAR)
+    dst = np.zeros((int(6 * BAR), 2))
+    fx.place(dst, np.stack([env, env], axis=1), pos, "peak", SR)
+    assert abs(int(np.abs(dst[:, 0]).argmax()) - pos) <= int(0.001 * SR)
+
+
 def test_place_clips_at_edges():
     dst = np.zeros((100, 2))
     fx.place(dst, np.ones((50, 2)), 80, "start")

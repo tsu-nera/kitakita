@@ -98,8 +98,9 @@ def main(plan_path: str) -> None:
         if "file" in it:
             x, kind = fx_mod.load_oneshot(it["file"], sr, it.get("reverse", False)), Path(it["file"]).name
         else:
-            x, kind = fx_mod.synth(it["synth"], int(round(it["bars"] * bar)), sr, it.get("f0"), it.get("f1"), it.get("seed", 0)), it["synth"]
-        fx_mod.place(fxsig, x * 10 ** (it.get("gain_db", 0) / 20), pos, align)
+            x, kind = fx_mod.synth(it["synth"], int(round(it["bars"] * bar)), sr, it.get("f0"), it.get("f1"), it.get("seed", 0),
+                                   it.get("resonance", fx_mod.RESONANCE)), it["synth"]
+        fx_mod.place(fxsig, x * 10 ** (it.get("gain_db", 0) / 20), pos, align, sr)
         fx_rows.append((pos, bar_beat(it), it["name"], kind, align, it.get("gain_db", 0)))
     for it in plan.get("throw", []):
         pos = fx_mod.position(it["bar"], it.get("beat", 1), bar)
