@@ -23,6 +23,7 @@
 |------|---------|------|
 | 曲フォルダ | `~/Music/kitakita/tracks/` | 原曲以外の本人の判断は作り直せない。**バックアップ未整備**（`/home` は snapper の対象外） |
 | 派生物（解析・stem・warp） | `~/.cache/trackprep/` | track_id は原曲の内容のハッシュなので、原曲を移動しても引ける |
+| re-edit のコード | repo の `mixes/re_edit/`（`render.py`, `source_cues.py`, `fx.py`） | 追跡対象 |
 | 実験スクリプト・試聴クリップ | repo の `tmp/djmix/` | git 非追跡。方式が固まったら trackprep へ昇格 |
 
 ## re-edit の型
@@ -45,5 +46,20 @@ Suno の曲はトランスの音色でポップスの形（キックの無い in
 - Suno は最後にポップスの締め（テンポが崩れる・太鼓の一撃）を置く。**締めの直前の区間（vocal 無し、drop に聞こえることもある）は原曲の outro として扱い**、outro の素材にする（Breath 122–127、鼓みの間 123–130）
 - 捨てる: ポップスの締め（テンポが崩れる部分と、その前打ち）
 - ループで小節を足すときは、締めへの前打ちを含む小節をフレーズの最後にだけ置く
+
+### transition FX（`fx:` / `throw:`）
+
+区間の境目に重ねる任意の欄。位置は `bar`（edit の小節、1始まり）と `beat`（1始まり、小数可、省略は 1）。`fx:` か `throw:` があると、FX 入りの WAV と、FX 無しで integrated loudness をそろえた `<edit>.nofx.wav` を書く（ピークは両方 -1.0 dBFS 以下）。どちらも無ければ従来と同じ出力。
+
+```yaml
+fx:
+  - {name: riser, synth: riser, bars: 8, bar: 35, align: end, resonance: 0.7, gain_db: -4}   # f0/f1 (Hz)・seed も指定可
+  - {name: crash, file: ~/path/crash.wav, bar: 35, gain_db: -3}
+  - {name: rev, file: ~/path/reverse_cymbal.wav, bar: 59, align: peak}  # reverse cymbal
+throw:   # 位置を覆う layer の原曲から stem の beats 拍を取り、delay の wet だけを足す
+  - {name: echo, stem: vocals, bar: 50, beat: 4, beats: 1, delay_beats: 0.75, feedback: 0.45, tail_bars: 4}
+```
+
+`align: end` は素材の末尾を、`align: peak` は音量のピークを指定位置に合わせる。Black Octopus Trance Vision の reverse cymbal は25本中24本がピークを途中（多くは真ん中: swell → crash → 減衰）に持つので `peak` で置く。`resonance`（既定 0.2）を上げると cutoff の動きが聞こえやすい。`synth` は `riser` / `downlifter`（ステレオ noise の LPF スイープ）。`.arrangement.md` に `## transition FX` の一覧が付く。
 
 Mixxx はパスで曲を管理する。曲を移すときは Mixxx を閉じ、`~/.mixxx/mixxxdb.sqlite` の `track_locations.location`/`directory` も書き換える（キューを保つため）。
