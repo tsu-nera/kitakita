@@ -1,7 +1,8 @@
 """Render a re-edit plan (YAML) from a track's 142 BPM warp output (trackprep warp --stems).
 
 usage: uv run --project src/trackprep python mixes/re_edit/render.py <plan.yaml>
-Writes the edit WAV, <edit>.arrangement.md (edit-bar -> source-bar map), <edit>.cues.json (for the mixxx skill's write_cues --json) and <edit>.drums.wav
+If the plan has `fx:` / `throw:` (see mixes/README.md), the edit WAV carries them and <edit>.nofx.wav is the same edit without,
+loudness-matched. Writes the edit WAV, <edit>.arrangement.md (edit-bar -> source-bar map), <edit>.cues.json (for the mixxx skill's write_cues --json) and <edit>.drums.wav
 (the same plan rendered from drums stems only), then prints per-bar four_on_floor of the edit.
 """
 import json
@@ -15,6 +16,9 @@ import yaml
 
 from trackprep import drums as drums_mod
 from trackprep import store
+
+sys.path.insert(0, str(Path(__file__).parent))
+import fx as fx_mod  # noqa: E402
 
 FADE = 0.005  # s, de-click at every layer edge
 
@@ -70,10 +74,51 @@ def main(plan_path: str) -> None:
         at += s["bars"]
     starts["end"] = total
 
-    peak = np.abs(out).max()
-    if peak > 0.99:
-        out *= 0.99 / peak
+    def cut(stem: str, pos: int, nsamp: int) -> np.ndarray:
+        """nsamp samples of the original (warped) stem that sound at edit sample pos, taken from the layer covering it."""
+        b = int(pos // bar)
+        s = next(s for s in plan["sections"] if starts[s["label"]] <= b < starts[s["label"]] + s["bars"])
+        off = b - starts[s["label"]]
+        cover = [L for L in s["layers"] if L.get("at", 0) <= off < L.get("at", 0) + L["to"] - L["from"] + 1]
+        assert cover, f"no layer covers edit bar {b + 1}"
+        L = next((c for c in cover if c["stem"] == "mix"), cover[0])
+        s0 = int(round(d0 + k_of(L["from"]) * bar + pos - (starts[s["label"]] + L.get("at", 0)) * bar))
+        x = audio[stem][s0:s0 + nsamp].copy()
+        f = min(int(FADE * sr), len(x) // 2)
+        x[:f] *= np.linspace(0, 1, f)[:, None]
+        x[len(x) - f:] *= np.linspace(1, 0, f)[:, None]
+        return x
+
+    bar_beat = lambda it: f"{it['bar']}.{it.get('beat', 1):g}"  # noqa: E731
+    fx_rows = []  # (edit sample position, "bar.beat", name, kind, align, gain_db) for the arrangement.md
+    fxsig = np.zeros_like(out)
+    for it in plan.get("fx", []):
+        pos = fx_mod.position(it["bar"], it.get("beat", 1), bar)
+        align = it.get("align", "start")
+        if "file" in it:
+            x, kind = fx_mod.load_oneshot(it["file"], sr, it.get("reverse", False)), Path(it["file"]).name
+        else:
+            x, kind = fx_mod.synth(it["synth"], int(round(it["bars"] * bar)), sr, it.get("f0"), it.get("f1"), it.get("seed", 0)), it["synth"]
+        fx_mod.place(fxsig, x * 10 ** (it.get("gain_db", 0) / 20), pos, align)
+        fx_rows.append((pos, bar_beat(it), it["name"], kind, align, it.get("gain_db", 0)))
+    for it in plan.get("throw", []):
+        pos = fx_mod.position(it["bar"], it.get("beat", 1), bar)
+        beat_sec = bar / sr / 4
+        x = cut(it["stem"], pos, int(round(it.get("beats", 1) * beat_sec * sr)))
+        wet = fx_mod.throw_wet(x, sr, it.get("delay_beats", 0.75) * beat_sec, it.get("feedback", 0.45), it.get("tail_bars", 4) * bar / sr, it.get("reverb"))
+        fx_mod.place(fxsig, wet * 10 ** (it.get("gain_db", 0) / 20), pos)
+        fx_rows.append((pos, bar_beat(it), it["name"], f"throw {it['stem']}", "start", it.get("gain_db", 0)))
+
     dst = Path(plan["out"]).expanduser()
+    if fx_rows:
+        nofx, out = fx_mod.match_and_limit(out, out + fxsig, sr)
+        sf.write(dst.with_name(f"{dst.stem}.nofx.wav"), nofx, sr, subtype="PCM_16")
+        for name, y in (("nofx", nofx), ("fx", out)):
+            print(f"  {name:<4} LUFS {fx_mod.lufs(y, sr):.2f}  peak {fx_mod.peak_db(y):.2f} dBFS")
+    else:
+        peak = np.abs(out).max()
+        if peak > 0.99:
+            out *= 0.99 / peak
     sf.write(dst, out, sr, subtype="PCM_16")
     sf.write(dst.with_suffix(".drums.wav"), drm, sr, subtype="PCM_16")
 
@@ -84,18 +129,18 @@ def main(plan_path: str) -> None:
     dst.with_suffix(".cues.json").write_text(json.dumps({"wav": str(dst), "cues": cues, **mk}, ensure_ascii=False, indent=1))
 
     dst.with_suffix(".yaml").write_text(Path(plan_path).read_text())  # the plan this WAV was rendered from
-    dst.with_suffix(".arrangement.md").write_text(arrangement_md(plan, plan_path, starts, sec, len(a["bars"])))
+    dst.with_suffix(".arrangement.md").write_text(arrangement_md(plan, plan_path, starts, sec, len(a["bars"]), fx_rows, bar))
 
     beats = np.arange(total * 4) * (bar / sr / 4)
     rows = drums_mod.bar_kicks(drm, sr, beats, beats[::4])
-    print(f"{dst.name}: {total} bars, {n / sr:.1f}s, peak scale {min(1, 0.99 / peak):.2f}")
+    print(f"{dst.name}: {total} bars, {n / sr:.1f}s" + ("" if fx_rows else f", peak scale {min(1, 0.99 / peak):.2f}"))
     for s in plan["sections"]:
         b0 = starts[s["label"]]
         flags = "".join("x" if r["four_on_floor"] else "." for r in rows[b0:b0 + s["bars"]])
         print(f"  bar {b0 + 1:3d}-{b0 + s['bars']:3d}  {sec(b0):6.1f}s  {s['label']:<14} 4otf {flags}")
 
 
-def arrangement_md(plan: dict, plan_path: str, starts: dict, sec, n_src: int) -> str:
+def arrangement_md(plan: dict, plan_path: str, starts: dict, sec, n_src: int, fx_rows: list, bar: float) -> str:
     """Edit-bar -> source-bar map, and the joints where the original order is broken."""
     mmss = lambda s: f"{int(s // 60)}:{int(s % 60):02d}"  # noqa: E731
     sp = Path(plan_path).resolve().parent / "structure.yaml"  # the track folder holds both
@@ -145,6 +190,11 @@ def arrangement_md(plan: dict, plan_path: str, starts: dict, sec, n_src: int) ->
     unused = [b for b in range(1, n_src + 1) if b not in used]
     lines += ["", "## 使っていない原曲の小節", "", f"- {ranges(unused) or 'なし'}（原曲は {n_src} 小節）",
               *(f"  - {r}: {roles(*map(int, r.split('–')) if '–' in r else (int(r), int(r)))}" for r in ranges(unused).split(", ") if r), ""]
+    if fx_rows:
+        lines += ["## transition FX", "", "| edit bar.beat | time | name | kind | align | gain_db |", "|---|---|---|---|---|---|"]
+        for pos, bb, name, kind, align, g in sorted(fx_rows):
+            lines.append(f"| {bb} | {mmss(sec(pos / bar))} | {name} | {kind} | {align} | {g} |")
+        lines.append("")
     return "\n".join(lines)
 
 
