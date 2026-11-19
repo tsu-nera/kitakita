@@ -23,6 +23,7 @@
 |------|---------|------|
 | 曲フォルダ | `~/Music/kitakita/tracks/` | 原曲以外の本人の判断は作り直せない。**バックアップ未整備**（`/home` は snapper の対象外） |
 | 派生物（解析・stem・warp） | `~/.cache/trackprep/` | track_id は原曲の内容のハッシュなので、原曲を移動しても引ける |
+| re-edit のコード | repo の `mixes/re_edit/`（`render.py`, `source_cues.py`） | 追跡対象 |
 | 実験スクリプト・試聴クリップ | repo の `tmp/djmix/` | git 非追跡。方式が固まったら trackprep へ昇格 |
 
 ## re-edit の型
